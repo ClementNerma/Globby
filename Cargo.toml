@@ -3,6 +3,11 @@ name = "globby"
 version = "0.1.0"
 edition = "2024"
 
+# Metadata for Cargo publishing
+description = "Heavily opinionated glob matching library"
+license = "Apache-2.0"
+repository = "https://github.com/ClementNerma/Globby"
+
 [dependencies]
 parsy = "0.12.3"
 regex = "1.11.1"
