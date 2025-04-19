@@ -52,8 +52,8 @@ pub use self::{
 /// Match a pattern against a directory
 ///
 /// For details on how patterns are applied, see [`Walker::new`]
-pub fn glob(pattern: &str, dir: &Path) -> Result<Walker, GlobError> {
-    let pattern = Pattern::new(pattern).map_err(GlobError::InvalidPattern)?;
+pub fn glob(pattern: &str, dir: &Path) -> Result<Walker, ParsingError> {
+    let pattern = Pattern::new(pattern)?;
 
     Ok(Walker::new(pattern, dir))
 }
@@ -61,8 +61,8 @@ pub fn glob(pattern: &str, dir: &Path) -> Result<Walker, GlobError> {
 /// Match a pattern against a directory
 ///
 /// For details on how patterns are applied, see [`Walker::new`]
-pub fn glob_with(pattern: &str, dir: &Path, opts: PatternOpts) -> Result<Walker, GlobError> {
-    let pattern = Pattern::new_with_opts(pattern, opts).map_err(GlobError::InvalidPattern)?;
+pub fn glob_with(pattern: &str, dir: &Path, opts: PatternOpts) -> Result<Walker, ParsingError> {
+    let pattern = Pattern::new_with_opts(pattern, opts)?;
 
     Ok(Walker::new(pattern, dir))
 }
@@ -73,9 +73,20 @@ pub fn glob_with(pattern: &str, dir: &Path, opts: PatternOpts) -> Result<Walker,
 ///
 /// For details on how patterns are applied, see [`Walker`]
 pub fn glob_current_dir(pattern: &str) -> Result<Walker, GlobError> {
-    let current_dir = std::env::current_dir().map_err(GlobError::WalkerError)?;
+    let current_dir = std::env::current_dir().map_err(GlobError::FailedToGetCurrentDir)?;
 
-    glob(pattern, &current_dir)
+    glob(pattern, &current_dir).map_err(GlobError::InvalidPattern)
+}
+
+/// Match a pattern against the current directory
+///
+/// Strictly equivalent to calling [`glob`] with the canonicalized path to the current directory
+///
+/// For details on how patterns are applied, see [`Walker`]
+pub fn glob_current_dir_with(pattern: &str, opts: PatternOpts) -> Result<Walker, GlobError> {
+    let current_dir = std::env::current_dir().map_err(GlobError::FailedToGetCurrentDir)?;
+
+    glob_with(pattern, &current_dir, opts).map_err(GlobError::InvalidPattern)
 }
 
 /// Error occuring during glob execution
@@ -84,6 +95,6 @@ pub enum GlobError {
     /// The provided pattern is invalid
     InvalidPattern(ParsingError),
 
-    /// An error occurred while traversing the filesystem
-    WalkerError(std::io::Error),
+    /// Failed to get path to the current directory
+    FailedToGetCurrentDir(std::io::Error),
 }
