@@ -1,6 +1,5 @@
 use std::{
     ffi::OsStr,
-    os::unix::ffi::OsStrExt,
     path::{MAIN_SEPARATOR_STR, Path, PathBuf, PrefixComponent},
 };
 
@@ -265,7 +264,7 @@ fn match_components(components: &[Component], mut path: &[&OsStr]) -> PatternMat
 
                 path = &path[1..];
 
-                if !regex.is_match(part.as_bytes()) {
+                if !regex.is_match(part.as_encoded_bytes()) {
                     return PatternMatchResult::NotMatched;
                 }
             }
