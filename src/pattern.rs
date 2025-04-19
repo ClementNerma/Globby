@@ -49,7 +49,7 @@ pub struct PatternOpts {
 /// Matches are performed against path components, e.g. in `/path/to/item` components are `path`, `to` and `item`.
 /// Matchers **cannot** match path separators.
 ///
-/// * Path separators can be written as `/` or `\` no matter the platform (Windows, Linux, macOS, ...)
+/// * Path separators can be written as `/` or `\` depending on the platform (Windows, Linux, macOS, ...)
 /// * In addition, `**` will match any possible combination of directories. For instance, `/**/*.txt` will match any of `/file.txt`, `/dir/file.txt`, `/dir/dir2/file.txt`, and so on.
 /// * Absolute patterns can only be matched against absolute paths. e.g. `/dir` will not match `dir`. Note that using a [`crate::Walker`] will not cause this problem as a base directory is used.
 
