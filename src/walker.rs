@@ -3,8 +3,6 @@ use std::{
     path::{MAIN_SEPARATOR_STR, Path, PathBuf},
 };
 
-use anyhow::Result;
-
 use crate::{Pattern, fs_walker::FsWalker, parser::PatternType, pattern::PatternMatchResult};
 
 /// Walker implementation, yielding filesystem entries that match the provided pattern
@@ -92,7 +90,7 @@ impl Walker {
 }
 
 impl Iterator for Walker {
-    type Item = Result<PathBuf>;
+    type Item = Result<PathBuf, std::io::Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let state = self.state.as_mut()?;

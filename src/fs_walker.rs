@@ -3,10 +3,8 @@ use std::{
     path::PathBuf,
 };
 
-use anyhow::{Context, Result};
-
 pub struct FsWalker {
-    readers: Vec<(PathBuf, ReadDir)>,
+    readers: Vec<ReadDir>,
     going_into_dir: Option<PathBuf>,
 }
 
@@ -18,40 +16,34 @@ impl FsWalker {
         }
     }
 
-    pub fn skip_incoming_dir(&mut self) -> Result<PathBuf> {
-        self.going_into_dir.take().context("No incoming directory")
+    pub fn skip_incoming_dir(&mut self) -> Result<PathBuf, NoIncomingDir> {
+        self.going_into_dir.take().ok_or(NoIncomingDir)
     }
 }
 
 impl Iterator for FsWalker {
-    type Item = Result<DirEntry>;
+    type Item = Result<DirEntry, std::io::Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             if let Some(going_into_dir) = self.going_into_dir.take() {
-                let reader = std::fs::read_dir(&going_into_dir).with_context(|| {
-                    format!("Failed to read directory {}", going_into_dir.display())
-                });
+                let reader = std::fs::read_dir(&going_into_dir);
 
                 match reader {
                     Err(err) => return Some(Err(err)),
                     Ok(reader) => {
-                        self.readers.push((going_into_dir, reader));
+                        self.readers.push(reader);
                         continue;
                     }
                 }
             }
 
-            let (curr_dir, reader) = self.readers.last_mut()?;
+            let reader = self.readers.last_mut()?;
 
             let Some(entry) = reader.next() else {
                 self.readers.pop();
                 continue;
             };
-
-            let entry = entry.with_context(|| {
-                format!("Failed to read item in directory {}", curr_dir.display())
-            });
 
             if let Ok(entry) = entry.as_ref() {
                 if entry.path().is_dir() {
@@ -63,3 +55,6 @@ impl Iterator for FsWalker {
         }
     }
 }
+
+#[derive(Debug)]
+pub struct NoIncomingDir;

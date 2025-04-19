@@ -41,9 +41,10 @@ mod walker;
 
 use std::path::Path;
 
-use anyhow::{Context, Result, anyhow};
+use parsy::ParsingError;
 
 pub use self::{
+    fs_walker::NoIncomingDir,
     pattern::{Pattern, PatternMatchResult, PatternOpts},
     walker::Walker,
 };
@@ -51,9 +52,8 @@ pub use self::{
 /// Match a pattern against a directory
 ///
 /// For details on how patterns are applied, see [`Walker::new`]
-pub fn glob(pattern: &str, dir: &Path) -> Result<Walker> {
-    let pattern = Pattern::new(pattern)
-        .map_err(|err| anyhow!("Failed to parse provided pattern: {err:?}"))?;
+pub fn glob(pattern: &str, dir: &Path) -> Result<Walker, GlobError> {
+    let pattern = Pattern::new(pattern).map_err(GlobError::InvalidPattern)?;
 
     Ok(Walker::new(pattern, dir))
 }
@@ -61,9 +61,8 @@ pub fn glob(pattern: &str, dir: &Path) -> Result<Walker> {
 /// Match a pattern against a directory
 ///
 /// For details on how patterns are applied, see [`Walker::new`]
-pub fn glob_with(pattern: &str, dir: &Path, opts: PatternOpts) -> Result<Walker> {
-    let pattern = Pattern::new_with_opts(pattern, opts)
-        .map_err(|err| anyhow!("Failed to parse provided pattern: {err:?}"))?;
+pub fn glob_with(pattern: &str, dir: &Path, opts: PatternOpts) -> Result<Walker, GlobError> {
+    let pattern = Pattern::new_with_opts(pattern, opts).map_err(GlobError::InvalidPattern)?;
 
     Ok(Walker::new(pattern, dir))
 }
@@ -73,9 +72,18 @@ pub fn glob_with(pattern: &str, dir: &Path, opts: PatternOpts) -> Result<Walker>
 /// Strictly equivalent to calling [`glob`] with the canonicalized path to the current directory
 ///
 /// For details on how patterns are applied, see [`Walker`]
-pub fn glob_current_dir(pattern: &str) -> Result<Walker> {
-    let current_dir =
-        std::env::current_dir().context("Failed to get path of the current directory")?;
+pub fn glob_current_dir(pattern: &str) -> Result<Walker, GlobError> {
+    let current_dir = std::env::current_dir().map_err(GlobError::WalkerError)?;
 
     glob(pattern, &current_dir)
+}
+
+/// Error occuring during glob execution
+#[derive(Debug)]
+pub enum GlobError {
+    /// The provided pattern is invalid
+    InvalidPattern(ParsingError),
+
+    /// An error occurred while traversing the filesystem
+    WalkerError(std::io::Error),
 }

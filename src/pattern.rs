@@ -4,7 +4,6 @@ use std::{
     path::{MAIN_SEPARATOR_STR, Path, PathBuf, PrefixComponent},
 };
 
-use anyhow::Result;
 use parsy::ParsingError;
 
 use crate::{
