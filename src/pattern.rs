@@ -155,7 +155,20 @@ impl Pattern {
             return PatternMatchResult::PathIsAbsolute;
         }
 
-        let (prefix, path_components) = simplify_path_components(path);
+        let (prefix, mut path_components) = simplify_path_components(path);
+
+        // Remove the leading '..' components from the path to improve the comparison
+        if let PatternType::RelativeToParent { depth } = self.pattern_type {
+            if path_components.len() < depth.into()
+                || path_components[..depth.into()]
+                    .iter()
+                    .any(|path| *path != OsStr::new(".."))
+            {
+                return PatternMatchResult::NotMatched;
+            }
+
+            std::mem::drop(path_components.drain(0..depth.into()));
+        }
 
         if prefix.is_some() {
             todo!("TODO: handle Windows prefixes");
@@ -166,10 +179,6 @@ impl Pattern {
 
     pub fn common_root_dir(&self) -> &Path {
         &self.common_root_dir
-    }
-
-    pub fn pattern_type(&self) -> PatternType {
-        self.pattern_type
     }
 }
 

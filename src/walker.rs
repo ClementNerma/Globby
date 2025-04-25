@@ -1,9 +1,9 @@
 use std::{
     fs::canonicalize,
-    path::{MAIN_SEPARATOR_STR, Path, PathBuf},
+    path::{Path, PathBuf},
 };
 
-use crate::{Pattern, fs_walker::FsWalker, parser::PatternType, pattern::PatternMatchResult};
+use crate::{Pattern, fs_walker::FsWalker, pattern::PatternMatchResult};
 
 /// Walker implementation, yielding filesystem entries that match the provided pattern
 ///
@@ -41,49 +41,30 @@ struct WalkerState {
     /// Underlying filesystem walker
     fs_walker: FsWalker,
 
-    /// Directory to strip, if the base directory the pattern is not absolute
-    strip_dir: Option<PathBuf>,
+    /// Base directory (canonicalized)
+    base_dir: PathBuf,
 }
 
 impl Walker {
     /// Create a walker that will yield filesystem entries that match the provided pattern
     pub fn new(pattern: Pattern, base_dir: &Path) -> Self {
-        let base_dir = base_dir.join(pattern.common_root_dir());
-
-        // Canonicalize the base directory, as to have an absolute path,
-        // and avoid components like `.` or `..`
-        let Ok(base_dir) = canonicalize(&base_dir) else {
+        let Ok(base_dir) = canonicalize(base_dir) else {
             return Self { state: None };
         };
 
-        // Determine the portion of the path to strip from yielded results
-        let strip_dir = if pattern.common_root_dir().is_absolute() {
-            // If the pattern is absolute, strip nothing, as we're starting from the root directory
-            None
-        } else {
-            // Otherwise, strip by default the base directory, as we're walking from here
-            let mut base_dir = base_dir.as_path();
+        let walk_from = base_dir.join(pattern.common_root_dir());
 
-            // If the pattern is relative to a parent (e.g. the pattern starts with `../`), change the
-            // directory to strip to a parent
-            if let PatternType::RelativeToParent { depth } = pattern.pattern_type() {
-                for _ in 0..depth.into() {
-                    let Some(parent) = base_dir.parent() else {
-                        return Self { state: None };
-                    };
-
-                    base_dir = parent;
-                }
-            }
-
-            Some(base_dir.to_owned())
+        // Canonicalize the base directory, as to have an absolute path,
+        // and avoid components like `.` or `..`
+        let Ok(walk_from) = canonicalize(&walk_from) else {
+            return Self { state: None };
         };
 
         Self {
             state: Some(WalkerState {
                 pattern,
-                fs_walker: FsWalker::new(base_dir),
-                strip_dir,
+                base_dir,
+                fs_walker: FsWalker::new(walk_from),
             }),
         }
     }
@@ -102,16 +83,14 @@ impl Iterator for Walker {
                 Err(err) => return Some(Err(err)),
             };
 
-            // Compute the real entry path, as the walker only provides something relative to the base directory
-            let entry_path = entry
-                .path()
-                // Also apply directory stripping (if the base directory is not absolute)
-                .strip_prefix(match state.strip_dir.as_deref() {
-                    Some(path) => path,
-                    None => Path::new(""),
-                })
-                .unwrap()
-                .to_owned();
+            // Compute the real entry path, as the walker only provides something relative to the base *walking* directory
+            let entry_path = canonicalize(entry.path()).unwrap();
+
+            if entry_path == state.base_dir {
+                continue;
+            }
+
+            let entry_path = diff_path(&entry_path, &state.base_dir);
 
             // Check if the path matches the provided globbing pattern
             match state.pattern.match_against(&entry_path) {
@@ -122,17 +101,7 @@ impl Iterator for Walker {
 
                 // Success!
                 PatternMatchResult::Matched => {
-                    return Some(Ok(match state.pattern.pattern_type() {
-                        // Make the yielded path relative to the base directory by adding '../' prefixes
-                        PatternType::RelativeToParent { depth } => {
-                            // TODO: cache this string to avoid runtime formatting overhead
-                            let prefix = format!("..{MAIN_SEPARATOR_STR}").repeat(depth.into());
-
-                            Path::new(&prefix).join(entry_path)
-                        }
-
-                        _ => entry_path,
-                    }));
+                    return Some(Ok(entry_path));
                 }
 
                 // Failed to match
@@ -148,4 +117,52 @@ impl Iterator for Walker {
             }
         }
     }
+}
+
+pub fn diff_path(path: &Path, base: &Path) -> PathBuf {
+    assert!(path.is_absolute());
+    assert!(base.is_absolute());
+
+    let mut ita = path.components();
+    let mut itb = base.components();
+
+    use std::path::Component;
+
+    let mut comps: Vec<Component> = vec![];
+
+    loop {
+        match (ita.next(), itb.next()) {
+            (None, None) => break,
+
+            (Some(a), None) => {
+                comps.push(a);
+                comps.extend(ita.by_ref());
+                break;
+            }
+
+            (None, _) => comps.push(Component::ParentDir),
+
+            (Some(a), Some(b)) if comps.is_empty() && a == b => (),
+
+            (Some(a), Some(Component::CurDir)) => comps.push(a),
+
+            (Some(_), Some(Component::ParentDir)) => unreachable!(),
+
+            (Some(a), Some(_)) => {
+                comps.push(Component::ParentDir);
+
+                for _ in itb {
+                    comps.push(Component::ParentDir);
+                }
+
+                comps.push(a);
+
+                comps.extend(ita.by_ref());
+
+                break;
+            }
+        }
+    }
+
+    comps.iter().map(|c| c.as_os_str()).collect()
 }
