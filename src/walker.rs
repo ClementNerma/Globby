@@ -48,11 +48,11 @@ struct WalkerState {
 impl Walker {
     /// Create a walker that will yield filesystem entries that match the provided pattern
     pub fn new(pattern: Pattern, base_dir: &Path) -> Self {
-        let walk_from = base_dir.join(pattern.common_root_dir());
+        let base_dir = base_dir.join(pattern.common_root_dir());
 
         // Canonicalize the base directory, as to have an absolute path,
         // and avoid components like `.` or `..`
-        let Ok(walk_from) = canonicalize(&walk_from) else {
+        let Ok(base_dir) = canonicalize(&base_dir) else {
             return Self { state: None };
         };
 
@@ -62,7 +62,7 @@ impl Walker {
             None
         } else {
             // Otherwise, strip by default the base directory, as we're walking from here
-            let mut base_dir = base_dir;
+            let mut base_dir = base_dir.as_path();
 
             // If the pattern is relative to a parent (e.g. the pattern starts with `../`), change the
             // directory to strip to a parent
@@ -82,7 +82,7 @@ impl Walker {
         Self {
             state: Some(WalkerState {
                 pattern,
-                fs_walker: FsWalker::new(walk_from),
+                fs_walker: FsWalker::new(base_dir),
                 strip_dir,
             }),
         }
