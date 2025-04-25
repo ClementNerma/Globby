@@ -1,4 +1,4 @@
-use std::{collections::HashSet, num::NonZero, sync::LazyLock};
+use std::{collections::HashSet, sync::LazyLock};
 
 use parsy::{Parser, char, choice, end, filter, just, not, recursive_shared, silent_choice};
 
@@ -115,49 +115,32 @@ pub static PATTERN_PARSER: LazyLock<Box<dyn Parser<RawPattern> + Send + Sync>> =
                     [] => RawComponent::Literal(String::new()),
                     [CharsMatcher::Literal(lit)] => RawComponent::Literal(lit.to_owned()),
                     _ => RawComponent::Suite(matchers),
-                })
-                .and_then_or_critical(|component| match component {
-                    RawComponent::Literal(lit) if lit == "." || lit == ".." => Err(format!(
-                        "Cannot match against '{lit}' after the beginning of the pattern"
-                    )),
-
-                    _ => Ok(component),
                 }),
         ));
 
-        let pattern_type = choice::<PatternType, _>((
-            //
-            // Absolute path (starts with a path separator)
-            //
-            dir_sep.to(PatternType::Absolute),
-            //
-            // Relative path starting from a parent directory (starts with one or more ".." components)
-            //
-            just(".")
-                .then(dir_sep)
-                .repeated()
-                .ignore_then(
-                    just("..")
-                        .then(dir_sep)
-                        // TODO: use counter container
-                        .repeated_into_vec()
-                        .map(|matches| matches.len()),
-                )
-                .try_map(NonZero::new)
-                .map(|depth| PatternType::RelativeToParent { depth }),
-            //
-            // Relative path (does not start with a path separator)
-            //
-            just(".").then(dir_sep).repeated().to(PatternType::Relative),
-        ));
+        let pattern = dir_sep.or_not().then(component.separated_by_into_vec(dir_sep))
+            .validate_or_critical(|(is_absolute, components)| {
+                let mut got_non_parent = false;
 
-        let pattern = pattern_type
-            // TODO: remove empty components
-            // TODO: for that, use a "VecWithFilter" alloc container
-            .then(component.separated_by_into_vec(dir_sep))
-            .map(|(pattern_type, components)| RawPattern {
-                pattern_type,
-                // TODO: then remove this
+                for component in components {
+                    if !matches!(component, RawComponent::Literal(lit) if lit == "..") {
+                        got_non_parent = true;
+                        continue;
+                    }
+
+                    if is_absolute.is_some() {
+                        return Err("Cannot use '..' components in absolute path patterns".into());
+                    }
+
+                    if got_non_parent {
+                        return Err("Cannot use '..' components after the beginning of the pattern".into());
+                    }
+                }
+
+                Ok(())
+            })
+            .map(|(is_absolute, components)| RawPattern {
+                is_absolute: is_absolute.is_some(),
                 components: components.into_iter().filter(|component| !matches!(component, RawComponent::Literal(str) if str.is_empty())).collect(),
             });
 
@@ -174,20 +157,8 @@ static SPECIAL_CHARS: LazyLock<HashSet<char>> =
 /// This is intended to be compiled using the [`crate::compiler`] module to improve performance during matching.
 #[derive(Debug)]
 pub struct RawPattern {
-    pub pattern_type: PatternType,
+    pub is_absolute: bool,
     pub components: Vec<RawComponent>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum PatternType {
-    /// The pattern is absolute (starts with a path separator such as '/')
-    Absolute,
-
-    /// The pattern is relative to a parent directory (starts with '../')
-    RelativeToParent { depth: NonZero<usize> },
-
-    /// The pattern is relative (does not start with a path separator or a '..' comopnents)
-    Relative,
 }
 
 #[derive(Debug)]

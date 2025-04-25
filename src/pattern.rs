@@ -7,7 +7,7 @@ use parsy::ParsingError;
 
 use crate::{
     compiler::{CaseSensitivity, Component, compile_component},
-    parser::{PATTERN_PARSER, PatternType, RawComponent, RawPattern},
+    parser::{PATTERN_PARSER, RawComponent, RawPattern},
 };
 
 /// Options for pattern matching
@@ -54,8 +54,8 @@ pub struct PatternOpts {
 
 #[derive(Debug, Clone)]
 pub struct Pattern {
-    /// Type of the pattern
-    pattern_type: PatternType,
+    /// Is the pattern absolute?
+    is_absolute: bool,
 
     /// Root directory that's common to all possible matches of a pattern
     ///
@@ -81,7 +81,7 @@ impl Pattern {
         let PatternOpts { case_insensitive } = opts;
 
         let RawPattern {
-            pattern_type,
+            is_absolute,
             components,
         } = PATTERN_PARSER.parse_str(input).map(|parsed| parsed.data)?;
 
@@ -105,14 +105,10 @@ impl Pattern {
         // Build the common root directory
         let common_root_dir = common_root_dir_components.join(MAIN_SEPARATOR_STR);
 
-        let common_root_dir = match pattern_type {
-            PatternType::Absolute => format!("/{common_root_dir}"),
-            PatternType::RelativeToParent { depth } => format!(
-                "{}{MAIN_SEPARATOR_STR}{common_root_dir}",
-                // Prefix the common directory with repeated "../"
-                format!("..{}", MAIN_SEPARATOR_STR).repeat(depth.into()),
-            ),
-            PatternType::Relative => common_root_dir,
+        let common_root_dir = if is_absolute {
+            format!("{MAIN_SEPARATOR_STR}{common_root_dir}")
+        } else {
+            common_root_dir
         };
 
         // Compile each individual comopnent
@@ -132,7 +128,7 @@ impl Pattern {
             .collect();
 
         Ok(Self {
-            pattern_type,
+            is_absolute,
             common_root_dir: PathBuf::from(common_root_dir),
             components,
         })
@@ -147,28 +143,15 @@ impl Pattern {
     }
 
     pub fn match_against(&self, path: &Path) -> PatternMatchResult {
-        if matches!(self.pattern_type, PatternType::Absolute) && !path.is_absolute() {
+        if self.is_absolute && !path.is_absolute() {
             return PatternMatchResult::PathNotAbsolute;
         }
 
-        if !matches!(self.pattern_type, PatternType::Absolute) && path.is_absolute() {
+        if !self.is_absolute && path.is_absolute() {
             return PatternMatchResult::PathIsAbsolute;
         }
 
-        let (prefix, mut path_components) = simplify_path_components(path);
-
-        // Remove the leading '..' components from the path to improve the comparison
-        if let PatternType::RelativeToParent { depth } = self.pattern_type {
-            if path_components.len() < depth.into()
-                || path_components[..depth.into()]
-                    .iter()
-                    .any(|path| *path != OsStr::new(".."))
-            {
-                return PatternMatchResult::NotMatched;
-            }
-
-            std::mem::drop(path_components.drain(0..depth.into()));
-        }
+        let (prefix, path_components) = simplify_path_components(path);
 
         if prefix.is_some() {
             todo!("TODO: handle Windows prefixes");

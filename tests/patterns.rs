@@ -2,39 +2,23 @@ use std::path::Path;
 
 use globby::Pattern;
 
-struct PatternTest {
-    pattern_str: &'static str,
-    should_match: &'static [&'static str],
-    should_not_match: &'static [&'static str],
-}
-
-fn test_pattern(test: PatternTest) {
-    let PatternTest {
-        pattern_str,
-        should_match,
-        should_not_match,
-    } = test;
-
-    let pattern = Pattern::new(pattern_str).unwrap();
-
-    for path in should_match {
-        assert!(
-            pattern.is_match(Path::new(path)),
-            "Pattern '{pattern_str}' did not match path '{path}'"
-        );
+#[cfg(target_family = "unix")]
+#[test]
+fn building_patterns() {
+    for valid in [
+        "", ".", "./", "/", "//", "/./.", "///", ".///", "a", "a/b", "a//b", "/a/b/", "/a//b//",
+    ] {
+        assert!(Pattern::new(valid).is_ok());
     }
 
-    for path in should_not_match {
-        assert!(
-            !pattern.is_match(Path::new(path)),
-            "Pattern '{pattern_str}' unexpectedly matched path '{path}'"
-        );
+    for invalid in ["./..", "/..", "../a/..", "a/..", "/a/.."] {
+        assert!(Pattern::new(invalid).is_err());
     }
 }
 
 #[cfg(target_family = "unix")]
 #[test]
-fn patterns() {
+fn matching_patterns() {
     test_pattern(PatternTest {
         pattern_str: "*",
         should_match: &["a", "ab", "abc", "a/", "a\\"],
@@ -136,4 +120,34 @@ fn patterns() {
         should_match: &["a", "b1c", "b1é", "b2 "],
         should_not_match: &["", "ab", "b", "b2", "c2a"],
     });
+}
+
+struct PatternTest {
+    pattern_str: &'static str,
+    should_match: &'static [&'static str],
+    should_not_match: &'static [&'static str],
+}
+
+fn test_pattern(test: PatternTest) {
+    let PatternTest {
+        pattern_str,
+        should_match,
+        should_not_match,
+    } = test;
+
+    let pattern = Pattern::new(pattern_str).unwrap();
+
+    for path in should_match {
+        assert!(
+            pattern.is_match(Path::new(path)),
+            "Pattern '{pattern_str}' did not match path '{path}'"
+        );
+    }
+
+    for path in should_not_match {
+        assert!(
+            !pattern.is_match(Path::new(path)),
+            "Pattern '{pattern_str}' unexpectedly matched path '{path}'"
+        );
+    }
 }
