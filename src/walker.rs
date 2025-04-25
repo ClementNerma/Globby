@@ -90,7 +90,11 @@ impl Iterator for Walker {
                 continue;
             }
 
-            let entry_path = diff_path(&entry_path, &state.base_dir);
+            let entry_path = if state.pattern.is_absolute() {
+                entry_path
+            } else {
+                diff_path(&entry_path, &state.base_dir)
+            };
 
             // Check if the path matches the provided globbing pattern
             match state.pattern.match_against(&entry_path) {

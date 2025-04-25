@@ -134,6 +134,11 @@ impl Pattern {
         })
     }
 
+    /// Check if the pattern is absolute (only matches absolute paths)
+    pub fn is_absolute(&self) -> bool {
+        self.is_absolute
+    }
+
     /// Match the pattern against a path
     ///
     /// Note that the path should be normalized.
@@ -160,6 +165,7 @@ impl Pattern {
         match_components(&self.components, &path_components)
     }
 
+    /// Get the common root directory for all possible matches of this pattern
     pub fn common_root_dir(&self) -> &Path {
         &self.common_root_dir
     }
