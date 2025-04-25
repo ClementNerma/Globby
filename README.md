@@ -5,9 +5,9 @@ Globby is a small ~1k LoC library designed for searching all items in a given di
 ## Examples
 
 ```rust
-use globby::{PatternOpts, glob_current_dir};
+use globby::glob;
 
-let pattern = glob_current_dir("**/*.*", PatternOpts::default()).unwrap();
+let pattern = glob("**/*.*").unwrap();
 
 for path in pattern {
   println!("{}", path.unwrap().display());
