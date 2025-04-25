@@ -28,7 +28,7 @@ use crate::{Pattern, fs_walker::FsWalker, parser::PatternType, pattern::PatternM
 /// - Directories are always yielded before their content
 /// - Symbolic links are always followed
 /// - The base directory is not yielded in the results
-/// - No guarantee is given as to whether the results are yielded in a deterministic order
+/// - The iterator yields errors first, then entries in alphabetical order (see [`String::cmp`])
 pub struct Walker {
     /// Set to [`None`] if the walker cannot apply, e.g. if the base directory does not exist
     state: Option<WalkerState>,
@@ -39,7 +39,7 @@ struct WalkerState {
     pattern: Pattern,
 
     /// Underlying filesystem walker
-    dir_walker: FsWalker,
+    fs_walker: FsWalker,
 
     /// Directory to strip, if the base directory the pattern is not absolute
     strip_dir: Option<PathBuf>,
@@ -82,7 +82,7 @@ impl Walker {
         Self {
             state: Some(WalkerState {
                 pattern,
-                dir_walker: FsWalker::new(walk_from),
+                fs_walker: FsWalker::new(walk_from),
                 strip_dir,
             }),
         }
@@ -96,13 +96,16 @@ impl Iterator for Walker {
         let state = self.state.as_mut()?;
 
         loop {
-            let entry = match state.dir_walker.next()? {
+            // Get the next entry from the walker
+            let entry = match state.fs_walker.next()? {
                 Ok(entry) => entry,
                 Err(err) => return Some(Err(err)),
             };
 
+            // Compute the real entry path, as the walker only provides something relative to the base directory
             let entry_path = entry
                 .path()
+                // Also apply directory stripping (if the base directory is not absolute)
                 .strip_prefix(match state.strip_dir.as_deref() {
                     Some(path) => path,
                     None => Path::new(""),
@@ -110,12 +113,17 @@ impl Iterator for Walker {
                 .unwrap()
                 .to_owned();
 
+            // Check if the path matches the provided globbing pattern
             match state.pattern.match_against(&entry_path) {
+                // Absolute path conflict should not happen as it's been taken care of ahead of matching
                 PatternMatchResult::PathNotAbsolute | PatternMatchResult::PathIsAbsolute => {
                     unreachable!()
                 }
+
+                // Success!
                 PatternMatchResult::Matched => {
                     return Some(Ok(match state.pattern.pattern_type() {
+                        // Make the yielded path relative to the base directory by adding '../' prefixes
                         PatternType::RelativeToParent { depth } => {
                             // TODO: cache this string to avoid runtime formatting overhead
                             let prefix = format!("..{MAIN_SEPARATOR_STR}").repeat(depth.into());
@@ -126,11 +134,16 @@ impl Iterator for Walker {
                         _ => entry_path,
                     }));
                 }
+
+                // Failed to match
                 PatternMatchResult::NotMatched => {
+                    // Skip sub-directory traversal as no child would have matched anyway
                     if entry.path().is_dir() {
-                        state.dir_walker.skip_incoming_dir().unwrap();
+                        state.fs_walker.skip_incoming_dir().unwrap();
                     }
                 }
+
+                // May have matched if the path was more complete, so we just do nothing
                 PatternMatchResult::Starved => {}
             }
         }

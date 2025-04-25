@@ -1,17 +1,15 @@
-use std::{
-    fs::{DirEntry, ReadDir},
-    path::PathBuf,
-};
+use std::{cmp::Ordering, fs::DirEntry, path::PathBuf};
 
+/// A walker that yields items recursively from a provided base directory
 pub struct FsWalker {
-    readers: Vec<ReadDir>,
+    queue: Vec<Vec<Result<DirEntry, std::io::Error>>>,
     going_into_dir: Option<PathBuf>,
 }
 
 impl FsWalker {
     pub fn new(dir: PathBuf) -> Self {
         Self {
-            readers: vec![],
+            queue: vec![],
             going_into_dir: Some(dir),
         }
     }
@@ -26,26 +24,43 @@ impl Iterator for FsWalker {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
+            // Check if we're going into a directory
             if let Some(going_into_dir) = self.going_into_dir.take() {
-                let reader = std::fs::read_dir(&going_into_dir);
-
-                match reader {
+                match std::fs::read_dir(&going_into_dir) {
                     Err(err) => return Some(Err(err)),
-                    Ok(reader) => {
-                        self.readers.push(reader);
+                    Ok(items_iter) => {
+                        let mut items = items_iter.collect::<Vec<_>>();
+
+                        // Sort items so that errors appear at the end,
+                        // and correct directory entries are in descending alphabetic order
+                        // This is so the queue can be .pop()ed later to get the "earliest" items later on
+                        items.sort_by(|a, b| match (a, b) {
+                            (Ok(a), Ok(b)) => b.file_name().cmp(&a.file_name()),
+                            (Ok(_), Err(_)) => Ordering::Less,
+                            (Err(_), Ok(_)) => Ordering::Greater,
+                            (Err(_), Err(_)) => Ordering::Equal,
+                        });
+
+                        self.queue.push(items);
+
                         continue;
                     }
                 }
             }
 
-            let reader = self.readers.last_mut()?;
+            // Otherwise, get the currently handled directory's entries
+            let queue = self.queue.last_mut()?;
 
-            let Some(entry) = reader.next() else {
-                self.readers.pop();
+            let Some(entry) = queue.pop() else {
+                // If the reader is empty, remove it from the last
+                self.queue.pop();
+                // then get to use the next reader
                 continue;
             };
 
+            // If the sub-iterator didn't yield an error...
             if let Ok(entry) = entry.as_ref() {
+                // Check if we're going into a directory
                 if entry.path().is_dir() {
                     self.going_into_dir = Some(entry.path());
                 }
