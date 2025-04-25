@@ -49,44 +49,44 @@ pub use self::{
     walker::Walker,
 };
 
-/// Match a pattern against a directory
+/// Match a pattern against the current directory
+///
+/// Strictly equivalent to calling [`glob_in`] with the canonicalized path to the current directory
+///
+/// For details on how patterns are applied, see [`Walker`]
+pub fn glob(pattern: &str) -> Result<Walker, GlobError> {
+    let current_dir = std::env::current_dir().map_err(GlobError::FailedToGetCurrentDir)?;
+
+    glob_in(pattern, &current_dir).map_err(GlobError::InvalidPattern)
+}
+
+/// Match a pattern against the current directory
+///
+/// Strictly equivalent to calling [`glob_in_with`] with the canonicalized path to the current directory
+///
+/// For details on how patterns are applied, see [`Walker`]
+pub fn glob_with(pattern: &str, opts: PatternOpts) -> Result<Walker, GlobError> {
+    let current_dir = std::env::current_dir().map_err(GlobError::FailedToGetCurrentDir)?;
+
+    glob_in_with(pattern, &current_dir, opts).map_err(GlobError::InvalidPattern)
+}
+
+/// Match a pattern against a provided directory
 ///
 /// For details on how patterns are applied, see [`Walker::new`]
-pub fn glob(pattern: &str, dir: &Path) -> Result<Walker, ParsingError> {
+pub fn glob_in(pattern: &str, dir: &Path) -> Result<Walker, ParsingError> {
     let pattern = Pattern::new(pattern)?;
 
     Ok(Walker::new(pattern, dir))
 }
 
-/// Match a pattern against a directory
+/// Match a pattern against a provided directory
 ///
 /// For details on how patterns are applied, see [`Walker::new`]
-pub fn glob_with(pattern: &str, dir: &Path, opts: PatternOpts) -> Result<Walker, ParsingError> {
+pub fn glob_in_with(pattern: &str, dir: &Path, opts: PatternOpts) -> Result<Walker, ParsingError> {
     let pattern = Pattern::new_with_opts(pattern, opts)?;
 
     Ok(Walker::new(pattern, dir))
-}
-
-/// Match a pattern against the current directory
-///
-/// Strictly equivalent to calling [`glob`] with the canonicalized path to the current directory
-///
-/// For details on how patterns are applied, see [`Walker`]
-pub fn glob_current_dir(pattern: &str) -> Result<Walker, GlobError> {
-    let current_dir = std::env::current_dir().map_err(GlobError::FailedToGetCurrentDir)?;
-
-    glob(pattern, &current_dir).map_err(GlobError::InvalidPattern)
-}
-
-/// Match a pattern against the current directory
-///
-/// Strictly equivalent to calling [`glob`] with the canonicalized path to the current directory
-///
-/// For details on how patterns are applied, see [`Walker`]
-pub fn glob_current_dir_with(pattern: &str, opts: PatternOpts) -> Result<Walker, GlobError> {
-    let current_dir = std::env::current_dir().map_err(GlobError::FailedToGetCurrentDir)?;
-
-    glob_with(pattern, &current_dir, opts).map_err(GlobError::InvalidPattern)
 }
 
 /// Error occuring during glob execution

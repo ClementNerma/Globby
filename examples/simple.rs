@@ -1,7 +1,7 @@
-use globby::glob_current_dir;
+use globby::glob;
 
 fn main() {
-    let pattern = glob_current_dir("**/*.*").unwrap();
+    let pattern = glob("**/*.*").unwrap();
 
     for path in pattern {
         println!("{}", path.unwrap().display());
