@@ -3,9 +3,9 @@
 //! # Examples
 //!
 //! ```rust
-//! use globby::{PatternOpts, glob_current_dir};
+//! use globby::{PatternOpts, glob};
 //!
-//! let pattern = glob_current_dir("**/*.*").unwrap();
+//! let pattern = glob("**/*.*").unwrap();
 //!
 //! for path in pattern {
 //!   println!("{}", path.unwrap().display());
