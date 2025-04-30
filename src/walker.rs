@@ -28,7 +28,7 @@ use crate::{Pattern, fs_walker::FsWalker, pattern::PatternMatchResult};
 /// - Directories are always yielded before their content
 /// - Symbolic links are always followed
 /// - The base directory is not yielded in the results
-/// - The iterator yields errors first, then entries in alphabetical order (see [`String::cmp`])
+/// - No guarantee is given as for the order the results are yielded in
 pub struct Walker {
     /// Set to [`None`] if the walker cannot apply, e.g. if the base directory does not exist
     state: Option<WalkerState>,

@@ -1,8 +1,11 @@
-use std::{cmp::Ordering, fs::DirEntry, path::PathBuf};
+use std::{
+    fs::{DirEntry, ReadDir},
+    path::PathBuf,
+};
 
 /// A walker that yields items recursively from a provided base directory
 pub struct FsWalker {
-    queue: Vec<Vec<Result<DirEntry, std::io::Error>>>,
+    queue: Vec<ReadDir>,
     going_into_dir: Option<PathBuf>,
 }
 
@@ -28,30 +31,17 @@ impl Iterator for FsWalker {
             if let Some(going_into_dir) = self.going_into_dir.take() {
                 match std::fs::read_dir(&going_into_dir) {
                     Err(err) => return Some(Err(err)),
-                    Ok(items_iter) => {
-                        let mut items = items_iter.collect::<Vec<_>>();
-
-                        // Sort items so that errors appear at the end,
-                        // and correct directory entries are in descending alphabetic order
-                        // This is so the queue can be .pop()ed later to get the "earliest" items later on
-                        items.sort_by(|a, b| match (a, b) {
-                            (Ok(a), Ok(b)) => b.file_name().cmp(&a.file_name()),
-                            (Ok(_), Err(_)) => Ordering::Less,
-                            (Err(_), Ok(_)) => Ordering::Greater,
-                            (Err(_), Err(_)) => Ordering::Equal,
-                        });
-
-                        self.queue.push(items);
-
+                    Ok(reader) => {
+                        self.queue.push(reader);
                         continue;
                     }
                 }
             }
 
-            // Otherwise, get the currently handled directory's entries
+            // Otherwise, get the currently handled directory's reader
             let queue = self.queue.last_mut()?;
 
-            let Some(entry) = queue.pop() else {
+            let Some(entry) = queue.next() else {
                 // If the reader is empty, remove it from the last
                 self.queue.pop();
                 // then get to use the next reader
