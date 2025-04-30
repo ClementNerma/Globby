@@ -52,26 +52,26 @@ struct WalkerState {
 impl Walker {
     /// Create a walker that will yield filesystem entries that match the provided pattern
     pub fn new(pattern: Pattern, base_dir: &Path) -> Self {
-        let Ok(base_dir) = canonicalize(base_dir) else {
-            return Self { state: None };
-        };
+        Self::new_inner(pattern, base_dir).unwrap_or(Self { state: None })
+    }
+
+    fn new_inner(pattern: Pattern, base_dir: &Path) -> Option<Self> {
+        let base_dir = canonicalize(base_dir).ok()?;
 
         let walk_from = base_dir.join(pattern.common_root_dir());
 
         // Canonicalize the base directory, as to have an absolute path,
         // and avoid components like `.` or `..`
-        let Ok(walk_from) = canonicalize(&walk_from) else {
-            return Self { state: None };
-        };
+        let walk_from = canonicalize(&walk_from).ok()?;
 
-        Self {
+        Some(Walker {
             state: Some(WalkerState {
                 pattern,
                 base_dir,
                 open_dirs: vec![],
                 going_into_dir: Some(walk_from),
             }),
-        }
+        })
     }
 }
 
