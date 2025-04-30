@@ -34,7 +34,6 @@
 #![warn(unused_crate_dependencies)]
 
 mod compiler;
-mod fs_walker;
 mod parser;
 mod pattern;
 mod walker;
@@ -44,7 +43,6 @@ use std::path::Path;
 use parsy::ParsingError;
 
 pub use self::{
-    fs_walker::NoIncomingDir,
     pattern::{Pattern, PatternMatchResult, PatternOpts},
     walker::Walker,
 };

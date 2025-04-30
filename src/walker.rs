@@ -1,9 +1,9 @@
 use std::{
-    fs::canonicalize,
+    fs::{ReadDir, canonicalize},
     path::{Path, PathBuf},
 };
 
-use crate::{Pattern, fs_walker::FsWalker, pattern::PatternMatchResult};
+use crate::{Pattern, pattern::PatternMatchResult};
 
 /// Walker implementation, yielding filesystem entries that match the provided pattern
 ///
@@ -36,13 +36,17 @@ pub struct Walker {
 
 /// (Internal) Walker state
 struct WalkerState {
+    /// The pattern to apply to all entries
     pattern: Pattern,
-
-    /// Underlying filesystem walker
-    fs_walker: FsWalker,
 
     /// Base directory (canonicalized)
     base_dir: PathBuf,
+
+    /// Directory readers, recursively
+    open_dirs: Vec<ReadDir>,
+
+    /// Are we going into a directory?
+    going_into_dir: Option<PathBuf>,
 }
 
 impl Walker {
@@ -64,7 +68,8 @@ impl Walker {
             state: Some(WalkerState {
                 pattern,
                 base_dir,
-                fs_walker: FsWalker::new(walk_from),
+                open_dirs: vec![],
+                going_into_dir: Some(walk_from),
             }),
         }
     }
@@ -77,19 +82,47 @@ impl Iterator for Walker {
         let state = self.state.as_mut()?;
 
         loop {
-            // Get the next entry from the walker
-            let entry = match state.fs_walker.next()? {
+            // Check if we're going into a directory
+            if let Some(going_into_dir) = state.going_into_dir.take() {
+                match std::fs::read_dir(&going_into_dir) {
+                    Err(err) => return Some(Err(err)),
+                    Ok(reader) => {
+                        state.open_dirs.push(reader);
+                        continue;
+                    }
+                }
+            }
+
+            // Otherwise, get the currently handled directory's reader
+            let queue = state.open_dirs.last_mut()?;
+
+            let Some(entry) = queue.next() else {
+                // If the reader is empty, remove it from the last
+                state.open_dirs.pop();
+                // then get to use the next reader
+                continue;
+            };
+
+            // Get the successful entry or return the error
+            let entry = match entry {
                 Ok(entry) => entry,
                 Err(err) => return Some(Err(err)),
             };
 
+            // Check if we're going into a directory
+            if entry.path().is_dir() {
+                state.going_into_dir = Some(entry.path());
+            }
+
             // Compute the real entry path, as the walker only provides something relative to the base *walking* directory
             let entry_path = canonicalize(entry.path()).unwrap();
 
+            // Don't yield the base directory
             if entry_path == state.base_dir {
                 continue;
             }
 
+            // Compute the path relative to the base directory (if the pattern is not absolute)
             let entry_path = if state.pattern.is_absolute() {
                 entry_path
             } else {
@@ -112,7 +145,8 @@ impl Iterator for Walker {
                 PatternMatchResult::NotMatched => {
                     // Skip sub-directory traversal as no child would have matched anyway
                     if entry.path().is_dir() {
-                        state.fs_walker.skip_incoming_dir().unwrap();
+                        assert!(state.going_into_dir.is_some());
+                        state.going_into_dir = None;
                     }
                 }
 
