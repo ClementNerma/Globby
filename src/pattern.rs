@@ -68,6 +68,10 @@ pub struct Pattern {
     ///
     /// Each of them match a single path component (except the wildcard matcher)
     components: Vec<Component>,
+
+    /// Does the pattern contain a wildcard?
+    /// For more informations, see [`Pattern::has_wildcard`]
+    has_wildcard: bool,
 }
 
 impl Pattern {
@@ -112,7 +116,7 @@ impl Pattern {
         };
 
         // Compile each individual comopnent
-        let components = components
+        let components: Vec<_> = components
             .into_iter()
             .map(|component| {
                 compile_component(
@@ -130,6 +134,7 @@ impl Pattern {
         Ok(Self {
             is_absolute,
             common_root_dir: PathBuf::from(common_root_dir),
+            has_wildcard: components.iter().any(|c| matches!(c, Component::Wildcard)),
             components,
         })
     }
@@ -168,6 +173,19 @@ impl Pattern {
     /// Get the common root directory for all possible matches of this pattern
     pub fn common_root_dir(&self) -> &Path {
         &self.common_root_dir
+    }
+
+    /// Check if the component contains a wildcard
+    ///
+    /// Can be useful for e.g. determining if a matching directory should be traversed or not,
+    /// as the presence or absence of a wildcard indicates whether descendants may match
+    ///
+    /// Example:
+    /// * `/a/b` matches `/a/b` but cannot match any descendant
+    /// * `/a/**/b` matches `/a/b` and may match some descendants
+    /// * `/a/b/**` matches `/a/b` and may match some descendants
+    pub fn has_wildcard(&self) -> bool {
+        self.has_wildcard
     }
 }
 

@@ -124,11 +124,6 @@ impl Iterator for Walker {
                 Err(err) => return Some(Err(err)),
             };
 
-            // Check if we're going into a directory
-            if entry.path().is_dir() {
-                state.going_into_dir = Some(entry.path());
-            }
-
             // Compute the real entry path, as the walker only provides something relative to the base *walking* directory
             let entry_path = simplify_path(&entry.path());
 
@@ -150,20 +145,25 @@ impl Iterator for Walker {
 
                 // Success!
                 PatternMatchResult::Matched => {
+                    // If the pattern contains no wildcard, no descendant of this path may be matched
+                    // by the pattern, so if it's a directory, we can skip it
+                    // Otherwise, we'll need to traverse it
+                    if entry.path().is_dir() && state.pattern.has_wildcard() {
+                        state.going_into_dir = Some(entry.path());
+                    }
+
                     return Some(Ok(entry_path));
                 }
 
-                // Failed to match
-                PatternMatchResult::NotMatched => {
-                    // Skip sub-directory traversal as no child would have matched anyway
+                // May have matched if the path was more complete, so we just do nothing
+                PatternMatchResult::Starved => {
                     if entry.path().is_dir() {
-                        assert!(state.going_into_dir.is_some());
-                        state.going_into_dir = None;
+                        state.going_into_dir = Some(entry.path());
                     }
                 }
 
-                // May have matched if the path was more complete, so we just do nothing
-                PatternMatchResult::Starved => {}
+                // Failed to match and not starved, so we simply ignore this entry
+                PatternMatchResult::NotMatched => {}
             }
         }
     }
