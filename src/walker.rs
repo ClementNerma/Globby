@@ -44,8 +44,6 @@ struct WalkerState {
 
     /// Prefix to add to all paths before pattern matching
     ///
-    /// This will be made of '..' components exclusive
-    ///
     /// The reason this exists is as follows:
     /// * Let's say we have a base directory of '/a/b/c'
     /// * The pattern is '../**/*'
@@ -79,8 +77,6 @@ impl Walker {
         // Simplify the base directory, as to have an absolute path,
         // and avoid components like `.` or `..`
         let walk_from = simplify_path(&walk_from);
-
-        assert!(base_dir.strip_prefix(&walk_from).is_ok());
 
         Some(Walker {
             state: Some(WalkerState {
