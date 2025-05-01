@@ -136,8 +136,6 @@ impl Iterator for Walker {
             // Compute the real entry path, as the walker only provides something relative to the base *walking* directory
             let entry_path = simplify_path(&entry.path());
 
-            println!("{:?} => {entry_path:?}", entry.path());
-
             // Compute the path relative to the base directory (if the pattern is not absolute)
             let entry_path = if state.pattern.is_absolute() {
                 entry_path
