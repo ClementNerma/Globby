@@ -1,6 +1,6 @@
 use std::{
     fs::{ReadDir, canonicalize},
-    path::{Path, PathBuf},
+    path::{Component, MAIN_SEPARATOR_STR, Path, PathBuf},
 };
 
 use crate::{Pattern, pattern::PatternMatchResult};
@@ -76,9 +76,11 @@ impl Walker {
 
         let walk_from = base_dir.join(pattern.common_root_dir());
 
-        // Canonicalize the base directory, as to have an absolute path,
+        // Simplify the base directory, as to have an absolute path,
         // and avoid components like `.` or `..`
-        let walk_from = canonicalize(&walk_from).ok()?;
+        let walk_from = simplify_path(&walk_from);
+
+        assert!(base_dir.strip_prefix(&walk_from).is_ok());
 
         Some(Walker {
             state: Some(WalkerState {
@@ -132,7 +134,9 @@ impl Iterator for Walker {
             }
 
             // Compute the real entry path, as the walker only provides something relative to the base *walking* directory
-            let entry_path = canonicalize(entry.path()).unwrap();
+            let entry_path = simplify_path(&entry.path());
+
+            println!("{:?} => {entry_path:?}", entry.path());
 
             // Compute the path relative to the base directory (if the pattern is not absolute)
             let entry_path = if state.pattern.is_absolute() {
@@ -171,14 +175,38 @@ impl Iterator for Walker {
     }
 }
 
-pub fn diff_path(path: &Path, base: &Path) -> PathBuf {
+fn simplify_path(path: &Path) -> PathBuf {
+    let mut out = match path.components().next() {
+        Some(Component::RootDir) => PathBuf::from(MAIN_SEPARATOR_STR),
+        Some(Component::Prefix(prefix)) => PathBuf::from(prefix.as_os_str()),
+        _ => PathBuf::new(),
+    };
+
+    for (i, component) in path.components().enumerate() {
+        match component {
+            Component::Prefix(_) | Component::RootDir => assert!(i == 0),
+
+            Component::CurDir => {}
+
+            Component::ParentDir => {
+                out.pop();
+            }
+
+            Component::Normal(os_str) => {
+                out.push(os_str);
+            }
+        }
+    }
+
+    out
+}
+
+fn diff_path(path: &Path, base: &Path) -> PathBuf {
     assert!(path.is_absolute());
     assert!(base.is_absolute());
 
     let mut ita = path.components();
     let mut itb = base.components();
-
-    use std::path::Component;
 
     let mut comps: Vec<Component> = vec![];
 
