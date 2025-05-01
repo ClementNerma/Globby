@@ -39,8 +39,24 @@ struct WalkerState {
     /// The pattern to apply to all entries
     pattern: Pattern,
 
-    /// Base directory (canonicalized)
-    base_dir: PathBuf,
+    /// Directory we're walking from (canonicalized)
+    walk_from: PathBuf,
+
+    /// Prefix to add to all paths before pattern matching
+    ///
+    /// This will be made of '..' components exclusive
+    ///
+    /// The reason this exists is as follows:
+    /// * Let's say we have a base directory of '/a/b/c'
+    /// * The pattern is '../**/*'
+    /// * Now let's say our base directory is '/a/b'
+    /// * When resolving e.g. `/a/b/c/d` from the parent, the relative path compared to the base directory
+    ///   will be `d`, whereas we want `../c/d`
+    ///
+    /// So we prepare a prefix to join to all paths to make them comparable.
+    /// In our example, the prefix would be equal to `..` and the path provided to the pattern matcher
+    /// would be `../c/d`
+    parent_prefix: PathBuf,
 
     /// Directory readers, recursively
     open_dirs: Vec<ReadDir>,
@@ -66,10 +82,11 @@ impl Walker {
 
         Some(Walker {
             state: Some(WalkerState {
+                parent_prefix: diff_path(&walk_from, &base_dir),
+                going_into_dir: Some(walk_from.clone()),
                 pattern,
-                base_dir,
+                walk_from,
                 open_dirs: vec![],
-                going_into_dir: Some(walk_from),
             }),
         })
     }
@@ -117,16 +134,13 @@ impl Iterator for Walker {
             // Compute the real entry path, as the walker only provides something relative to the base *walking* directory
             let entry_path = canonicalize(entry.path()).unwrap();
 
-            // Don't yield the base directory
-            if entry_path == state.base_dir {
-                continue;
-            }
-
             // Compute the path relative to the base directory (if the pattern is not absolute)
             let entry_path = if state.pattern.is_absolute() {
                 entry_path
             } else {
-                diff_path(&entry_path, &state.base_dir)
+                state
+                    .parent_prefix
+                    .join(diff_path(&entry_path, &state.walk_from))
             };
 
             // Check if the path matches the provided globbing pattern
