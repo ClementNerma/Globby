@@ -119,7 +119,7 @@ pub static PATTERN_PARSER: LazyLock<Box<dyn Parser<RawPattern> + Send + Sync>> =
         ));
 
         let pattern = dir_sep.or_not().then(component.separated_by_into_vec(dir_sep))
-            .validate_or_critical(|(is_absolute, components)| {
+            .validate_or_dynamic_critical(|(is_absolute, components)| {
                 let mut got_non_parent = false;
 
                 for component in components {

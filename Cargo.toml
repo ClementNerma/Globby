@@ -1,6 +1,6 @@
 [package]
 name = "globby"
-version = "0.1.12"
+version = "0.1.13"
 edition = "2024"
 
 # Metadata for Cargo publishing
@@ -9,5 +9,5 @@ license = "Apache-2.0"
 repository = "https://github.com/ClementNerma/Globby"
 
 [dependencies]
-parsy = "0.13.0"
+parsy = "0.13.1"
 regex = "1.11.1"
