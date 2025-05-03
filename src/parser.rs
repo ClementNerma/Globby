@@ -141,7 +141,7 @@ pub static PATTERN_PARSER: LazyLock<Box<dyn Parser<RawPattern> + Send + Sync>> =
             })
             .map(|(is_absolute, components)| RawPattern {
                 is_absolute: is_absolute.is_some(),
-                components: components.into_iter().filter(|component| !matches!(component, RawComponent::Literal(str) if str.is_empty())).collect(),
+                components: components.into_iter().filter(|component| !matches!(component, RawComponent::Literal(str) if str.is_empty() || str == ".")).collect(),
             });
 
         Box::new(pattern.full())
