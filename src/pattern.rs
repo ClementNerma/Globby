@@ -153,18 +153,18 @@ impl Pattern {
     }
 
     pub fn match_against(&self, path: &Path) -> PatternMatchResult {
-        if self.is_absolute && !path.is_absolute() {
+        if self.is_absolute && !path.has_root() {
             return PatternMatchResult::PathNotAbsolute;
         }
 
-        if !self.is_absolute && path.is_absolute() {
+        if !self.is_absolute && path.has_root() {
             return PatternMatchResult::PathIsAbsolute;
         }
 
         let (prefix, path_components) = simplify_path_components(path);
 
         if prefix.is_some() {
-            todo!("TODO: handle Windows prefixes");
+            todo!("TODO: handle Windows prefixes, got: {prefix:?}");
         }
 
         match_components(&self.components, &path_components)
@@ -202,7 +202,11 @@ fn simplify_path_components(path: &Path) -> (Option<PrefixComponent>, Vec<&OsStr
     let mut normalized_components = vec![];
 
     let prefix = match first_component {
-        Component::Prefix(prefix) => Some(prefix),
+        Component::Prefix(prefix) => {
+            matches!(components_iter.next(), None | Some(Component::RootDir));
+            Some(prefix)
+        }
+
         Component::RootDir | Component::CurDir => None,
 
         Component::ParentDir => {
