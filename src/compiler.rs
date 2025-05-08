@@ -9,7 +9,7 @@ pub enum Component {
     Wildcard,
 }
 
-/// Determine if the build regular expressions should use case sensitivity or not
+/// Determine if the built regular expressions should use case sensitivity or not
 pub enum CaseSensitivity {
     Sensitive,
     Insensitive,
@@ -25,7 +25,12 @@ pub fn compile_component(component: RawComponent, case_sensitivity: CaseSensitiv
     match component {
         RawComponent::Wildcard => Component::Wildcard,
 
-        RawComponent::Literal(lit) => Component::Literal(lit),
+        RawComponent::Literal(lit) => match case_sensitivity {
+            CaseSensitivity::Sensitive => Component::Literal(lit),
+            CaseSensitivity::Insensitive => {
+                Component::Regex(Regex::new(&format!("(?i){}", regex::escape(&lit))).unwrap())
+            }
+        },
 
         RawComponent::Suite(chars_matchers) => {
             let mut regex = match case_sensitivity {

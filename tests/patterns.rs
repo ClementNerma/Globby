@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use globby::Pattern;
+use globby::{Pattern, PatternOpts};
 
 #[test]
 fn building_unix_patterns() {
@@ -293,6 +293,34 @@ fn matching_windows_patterns() {
         should_match: &["a", "b1c", "b1é", "b2 "],
         should_not_match: &["", "ab", "b", "b2", "c2a"],
     });
+}
+
+#[test]
+fn case_sensitivity() {
+    assert!(Pattern::new("hello").unwrap().is_match(Path::new("hello")));
+    assert!(!Pattern::new("hello").unwrap().is_match(Path::new("Hello")));
+
+    assert!(
+        Pattern::new_with_opts(
+            "hello",
+            PatternOpts {
+                case_insensitive: true
+            }
+        )
+        .unwrap()
+        .is_match(Path::new("hello"))
+    );
+
+    assert!(
+        Pattern::new_with_opts(
+            "hello",
+            PatternOpts {
+                case_insensitive: true
+            }
+        )
+        .unwrap()
+        .is_match(Path::new("Hello"))
+    );
 }
 
 fn compile_pattern(pattern: &str) -> Pattern {
