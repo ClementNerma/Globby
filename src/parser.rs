@@ -1,6 +1,9 @@
 use std::{collections::HashSet, sync::LazyLock};
 
-use parsy::{Parser, char, choice, end, filter, just, not, recursive_shared, silent_choice};
+use parsy::{
+    Parser,
+    helpers::{char, choice, end, filter, just, not, recursive_shared, silent_choice},
+};
 
 use crate::paths::{PathPrefix, WindowsDrive};
 
@@ -9,7 +12,7 @@ pub static PATTERN_PARSER: LazyLock<Box<dyn Parser<RawPattern> + Send + Sync>> =
     || {
         let normal_char = filter(|c| !SPECIAL_CHARS.contains(&c));
 
-        let chars_matcher = recursive_shared(|chars_matcher| {
+        let chars_matcher = recursive_shared(|chars_matcher| -> _ {
             choice::<CharsMatcher, _>((
             //
             // Literal characters
