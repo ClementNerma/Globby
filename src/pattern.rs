@@ -1,13 +1,14 @@
 use std::{
-    ffi::OsStr,
-    path::{MAIN_SEPARATOR_STR, Path, PathBuf, PrefixComponent},
+    ffi::OsString,
+    path::{MAIN_SEPARATOR, MAIN_SEPARATOR_STR, Path, PathBuf},
 };
 
 use parsy::ParsingError;
 
 use crate::{
     compiler::{CaseSensitivity, Component, compile_component},
-    parser::{PATTERN_PARSER, RawComponent, RawPattern},
+    parser::{PATTERN_PARSER, RawPattern},
+    paths::{PathPrefix, normalize_path},
 };
 
 /// Options for pattern matching
@@ -54,8 +55,8 @@ pub struct PatternOpts {
 
 #[derive(Debug, Clone)]
 pub struct Pattern {
-    /// Is the pattern absolute?
-    is_absolute: bool,
+    /// Does the pattern start with a prefix component?
+    prefix: Option<PathPrefix>,
 
     /// Root directory that's common to all possible matches of a pattern
     ///
@@ -84,36 +85,8 @@ impl Pattern {
     pub fn new_with_opts(input: &str, opts: PatternOpts) -> Result<Self, ParsingError> {
         let PatternOpts { case_insensitive } = opts;
 
-        let RawPattern {
-            is_absolute,
-            components,
-        } = PATTERN_PARSER.parse_str(input).map(|parsed| parsed.data)?;
-
-        // Get all deterministic components at the beginning of the pattern
-        // These will be used to compute the common root directory
-        let mut common_root_dir_components = components
-            .iter()
-            .map_while(|component| match component {
-                // Only get literal components, as these will always match the exact same path components
-                RawComponent::Literal(lit) => Some(lit.as_str()),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-
-        // If the entire pattern is deterministic, match from the parent directory to allow yielding
-        // that specific child item
-        if common_root_dir_components.len() == components.len() {
-            common_root_dir_components.pop();
-        }
-
-        // Build the common root directory
-        let common_root_dir = common_root_dir_components.join(MAIN_SEPARATOR_STR);
-
-        let common_root_dir = if is_absolute {
-            format!("{MAIN_SEPARATOR_STR}{common_root_dir}")
-        } else {
-            common_root_dir
-        };
+        let RawPattern { components, prefix } =
+            PATTERN_PARSER.parse_str(input).map(|parsed| parsed.data)?;
 
         // Compile each individual comopnent
         let components: Vec<_> = components
@@ -132,8 +105,8 @@ impl Pattern {
             .collect();
 
         Ok(Self {
-            is_absolute,
-            common_root_dir: PathBuf::from(common_root_dir),
+            common_root_dir: build_common_root_dir(prefix, &components),
+            prefix,
             has_wildcard: components.iter().any(|c| matches!(c, Component::Wildcard)),
             components,
         })
@@ -141,7 +114,12 @@ impl Pattern {
 
     /// Check if the pattern is absolute (only matches absolute paths)
     pub fn is_absolute(&self) -> bool {
-        self.is_absolute
+        self.prefix.is_some()
+    }
+
+    /// Get the path prefix
+    pub fn prefix(&self) -> Option<PathPrefix> {
+        self.prefix
     }
 
     /// Match the pattern against a path
@@ -153,21 +131,41 @@ impl Pattern {
     }
 
     pub fn match_against(&self, path: &Path) -> PatternMatchResult {
-        if self.is_absolute && !path.has_root() {
-            return PatternMatchResult::PathNotAbsolute;
+        let Ok(path) = normalize_path(path) else {
+            return PatternMatchResult::IncompatiblePrefix;
+        };
+
+        let is_absolute = path.prefix().is_some();
+
+        match &self.prefix {
+            Some(PathPrefix::RootDir) => {
+                if !is_absolute {
+                    return PatternMatchResult::PathNotAbsolute;
+                }
+            }
+
+            Some(PathPrefix::WindowsDrive(windows_drive)) => match path.prefix() {
+                Some(prefix) => match prefix {
+                    PathPrefix::RootDir => return PatternMatchResult::IncompatiblePrefix,
+
+                    PathPrefix::WindowsDrive(path_windows_drive) => {
+                        if *windows_drive != path_windows_drive {
+                            return PatternMatchResult::NotMatched;
+                        }
+                    }
+                },
+
+                None => return PatternMatchResult::PathNotAbsolute,
+            },
+
+            None => {
+                if is_absolute {
+                    return PatternMatchResult::PathIsAbsolute;
+                }
+            }
         }
 
-        if !self.is_absolute && path.has_root() {
-            return PatternMatchResult::PathIsAbsolute;
-        }
-
-        let (prefix, path_components) = simplify_path_components(path);
-
-        if prefix.is_some() {
-            todo!("TODO: handle Windows prefixes, got: {prefix:?}");
-        }
-
-        match_components(&self.components, &path_components)
+        match_components(&self.components, path.components())
     }
 
     /// Get the common root directory for all possible matches of this pattern
@@ -189,52 +187,48 @@ impl Pattern {
     }
 }
 
-fn simplify_path_components(path: &Path) -> (Option<PrefixComponent>, Vec<&OsStr>) {
-    use std::path::Component;
+fn build_common_root_dir(prefix: Option<PathPrefix>, components: &[Component]) -> PathBuf {
+    // Get all deterministic components at the beginning of the pattern
+    // These will be used to compute the common root directory
+    let mut common_root_dir_components = components
+        .iter()
+        .map_while(|component| match component {
+            // Only get literal components, as these will always match the exact same path components
+            Component::Literal(lit) => Some(lit.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
 
-    let mut components_iter = path.components();
-
-    let Some(first_component) = components_iter.next() else {
-        // Cannot match against empty paths
-        return (None, vec![]);
-    };
-
-    let mut normalized_components = vec![];
-
-    let prefix = match first_component {
-        Component::Prefix(prefix) => {
-            matches!(components_iter.next(), None | Some(Component::RootDir));
-            Some(prefix)
-        }
-
-        Component::RootDir | Component::CurDir => None,
-
-        Component::ParentDir => {
-            normalized_components.push(OsStr::new(".."));
-            None
-        }
-
-        Component::Normal(os_str) => {
-            normalized_components.push(os_str);
-            None
-        }
-    };
-
-    for component in components_iter {
-        match component {
-            Component::Prefix(_) | Component::RootDir => unreachable!(),
-            Component::CurDir => continue,
-            Component::ParentDir => {
-                normalized_components.push(OsStr::new(".."));
-            }
-            Component::Normal(os_str) => normalized_components.push(os_str),
-        }
+    // If the entire pattern is deterministic, match from the parent directory to allow yielding
+    // that specific child item
+    if common_root_dir_components.len() == components.len() {
+        common_root_dir_components.pop();
     }
 
-    (prefix, normalized_components)
+    // Build the common root directory
+    let mut common_root_dir = match prefix {
+        Some(prefix) => match prefix {
+            PathPrefix::RootDir => MAIN_SEPARATOR_STR.to_owned(),
+            PathPrefix::WindowsDrive(drive_letter) => {
+                format!("{}:", drive_letter.uppercase_letter())
+            }
+        },
+
+        None => String::new(),
+    };
+
+    for (i, common_root_dir_component) in common_root_dir_components.iter().enumerate() {
+        if i > 0 {
+            common_root_dir.push(MAIN_SEPARATOR);
+        }
+
+        common_root_dir.push_str(common_root_dir_component);
+    }
+
+    PathBuf::from(common_root_dir)
 }
 
-fn match_components(components: &[Component], mut path: &[&OsStr]) -> PatternMatchResult {
+fn match_components(components: &[Component], mut path: &[OsString]) -> PatternMatchResult {
     for i in 0..components.len() {
         match &components[i] {
             Component::Wildcard => {
@@ -256,8 +250,11 @@ fn match_components(components: &[Component], mut path: &[&OsStr]) -> PatternMat
                 for j in 0..path.len() {
                     match match_components(&components[i + 1..], &path[j..]) {
                         PatternMatchResult::PathNotAbsolute
-                        | PatternMatchResult::PathIsAbsolute => unreachable!(),
+                        | PatternMatchResult::PathIsAbsolute
+                        | PatternMatchResult::IncompatiblePrefix => unreachable!(),
+
                         PatternMatchResult::Matched => return PatternMatchResult::Matched,
+
                         PatternMatchResult::NotMatched | PatternMatchResult::Starved => {}
                     }
                 }
@@ -272,7 +269,7 @@ fn match_components(components: &[Component], mut path: &[&OsStr]) -> PatternMat
 
                 path = &path[1..];
 
-                if *part != OsStr::new(lit) {
+                if part.as_encoded_bytes() != lit.as_bytes() {
                     return PatternMatchResult::NotMatched;
                 }
             }
@@ -306,6 +303,9 @@ pub enum PatternMatchResult {
 
     /// Failed as the provided path is absolute while the pattern only matches relative paths
     PathIsAbsolute,
+
+    /// Failed as the provided path uses a different path prefix than the pattern's expected one
+    IncompatiblePrefix,
 
     /// Pattern matched against the provided path
     Matched,

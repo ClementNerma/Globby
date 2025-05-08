@@ -151,6 +151,57 @@ fn building_patterns() {
 
 #[cfg(target_family = "windows")]
 #[test]
+fn prefixes() {
+    use globby::PatternPrefix;
+
+    fn expect_prefix(pattern: &str, expected_prefix: PatternPrefix) {
+        let pattern = compile_pattern(pattern);
+
+        assert!(
+            pattern
+                .prefix()
+                .is_some_and(|prefix| *prefix == expected_prefix),
+            "Expected prefix {expected_prefix:?}, got {:?}",
+            pattern.prefix()
+        )
+    }
+
+    for prefix in [
+        "\\\\?",
+        "\\\\?\\UNC\\server\\share",
+        "\\\\?\\C:",
+        "\\\\?\\c:",
+        "\\\\.\\device",
+        "\\\\server\\share",
+        "C:",
+        "c:",
+    ] {
+        expect_prefix(prefix, PatternPrefix::WindowsPrefix(prefix.to_owned()));
+
+        expect_prefix(
+            &format!("{prefix}\\"),
+            PatternPrefix::WindowsPrefix(prefix.to_owned()),
+        );
+    }
+
+    for prefix in [
+        "\\\\?a",
+        "\\\\?\\UNC\\server",
+        "\\\\?\\UNC\\server\\share*",
+        "\\\\?\\C:a",
+        "\\\\a",
+        "C:a",
+        "c:a",
+    ] {
+        assert!(
+            Pattern::new(prefix).is_err(),
+            "Invalid pattern '{prefix}' is unexpectedly considered valid"
+        );
+    }
+}
+
+#[cfg(target_family = "windows")]
+#[test]
 fn matching_patterns() {
     test_pattern(PatternTest {
         pattern_str: "*",
@@ -255,6 +306,11 @@ fn matching_patterns() {
     });
 }
 
+fn compile_pattern(pattern: &str) -> Pattern {
+    Pattern::new(pattern)
+        .unwrap_or_else(|err| panic!("Failed to compile pattern '{pattern}':\n  > {err:?}"))
+}
+
 struct PatternTest {
     pattern_str: &'static str,
     should_match: &'static [&'static str],
@@ -268,7 +324,7 @@ fn test_pattern(test: PatternTest) {
         should_not_match,
     } = test;
 
-    let pattern = Pattern::new(pattern_str).unwrap();
+    let pattern = compile_pattern(pattern_str);
 
     for path in should_match {
         assert!(

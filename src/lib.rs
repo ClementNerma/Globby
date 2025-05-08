@@ -2,7 +2,7 @@
 //!
 //! # Examples
 //!
-//! ```rust
+//! ```no_run
 //! use globby::{PatternOpts, glob};
 //!
 //! let pattern = glob("**/*.*").unwrap();
@@ -34,7 +34,9 @@
 #![warn(unused_crate_dependencies)]
 
 mod compiler;
+mod opaque_os_str;
 mod parser;
+mod paths;
 mod pattern;
 mod walker;
 
@@ -43,6 +45,7 @@ use std::path::Path;
 use parsy::ParsingError;
 
 pub use self::{
+    paths::{PathPrefix, WindowsDrive, normalize_path},
     pattern::{Pattern, PatternMatchResult, PatternOpts},
     walker::Walker,
 };

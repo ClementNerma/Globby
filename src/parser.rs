@@ -2,6 +2,8 @@ use std::{collections::HashSet, sync::LazyLock};
 
 use parsy::{Parser, char, choice, end, filter, just, not, recursive_shared, silent_choice};
 
+use crate::paths::{PathPrefix, WindowsDrive};
+
 /// Parse a glob (pattern) string into a [`RawPattern`]
 pub static PATTERN_PARSER: LazyLock<Box<dyn Parser<RawPattern> + Send + Sync>> = LazyLock::new(
     || {
@@ -118,29 +120,71 @@ pub static PATTERN_PARSER: LazyLock<Box<dyn Parser<RawPattern> + Send + Sync>> =
                 }),
         ));
 
-        let pattern = dir_sep.or_not().then(component.separated_by_into_vec(dir_sep))
-            .validate_or_dynamic_critical(|(is_absolute, components)| {
-                let mut got_non_parent = false;
+        let windows_driver_letter = filter(|c| c.is_ascii_alphabetic())
+            .map(|c| WindowsDrive::try_from(c).unwrap())
+            .then_ignore(char(':'));
+
+        // let windows_server_share = alphanumeric()
+        //     .repeated()
+        //     .then(char('\\'))
+        //     .then(alphanumeric().repeated());
+
+        let prefix_suffix = silent_choice((dir_sep, end())).critical(
+            "Expected either a path separator or a directory separator after path prefix",
+        );
+
+        let prefix =
+            choice::<PathPrefix, _>((
+                //
+                // Drive letter (e.g. `C:`)
+                //
+                windows_driver_letter
+                    .map(PathPrefix::WindowsDrive)
+                    .then_ignore(prefix_suffix),
+                //
+                // Verbatim followed by drive letter (e.g. `\\?\C:`)
+                //
+                just("\\\\")
+                    .then(char('?').critical("Expected '?' symbol for verbatim path after '\\\\'"))
+                    .then(char('\\').critical(
+                        "Expected directory separator '\\' after verbatim prefix '\\\\?'",
+                    ))
+                    .ignore_then(windows_driver_letter.critical(
+                        "Expected a Windows drive letter after verbatimc prefix '\\\\?\\'",
+                    ))
+                    .map(PathPrefix::WindowsDrive)
+                    .then_ignore(prefix_suffix),
+                //
+                // Root dir (e.g. `/` or `\`)
+                //
+                dir_sep
+                    .followed_by(not(char('\\')).critical("Invalid verbatim path"))
+                    .map(|_| PathPrefix::RootDir),
+            ));
+
+        let pattern = prefix.or_not().then(component.separated_by_into_vec(dir_sep))
+            .validate_or_dynamic_critical(|(prefix, components)| {
+                let mut passed_parent = false;
 
                 for component in components {
                     if !matches!(component, RawComponent::Literal(lit) if lit == "..") {
-                        got_non_parent = true;
+                        passed_parent = true;
                         continue;
                     }
 
-                    if is_absolute.is_some() {
+                    if prefix.is_some() {
                         return Err("Cannot use '..' components in absolute path patterns".into());
                     }
 
-                    if got_non_parent {
+                    if passed_parent {
                         return Err("Cannot use '..' components after the beginning of the pattern".into());
                     }
                 }
 
                 Ok(())
             })
-            .map(|(is_absolute, components)| RawPattern {
-                is_absolute: is_absolute.is_some(),
+            .map(|(prefix, components)| RawPattern {
+                prefix,
                 components: components.into_iter().filter(|component| !matches!(component, RawComponent::Literal(str) if str.is_empty() || str == ".")).collect(),
             });
 
@@ -157,7 +201,7 @@ static SPECIAL_CHARS: LazyLock<HashSet<char>> =
 /// This is intended to be compiled using the [`crate::compiler`] module to improve performance during matching.
 #[derive(Debug)]
 pub struct RawPattern {
-    pub is_absolute: bool,
+    pub prefix: Option<PathPrefix>,
     pub components: Vec<RawComponent>,
 }
 

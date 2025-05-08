@@ -1,9 +1,10 @@
 use std::{
+    ffi::OsStr,
     fs::{ReadDir, canonicalize},
-    path::{Component, MAIN_SEPARATOR_STR, Path, PathBuf},
+    path::{Path, PathBuf},
 };
 
-use crate::{Pattern, pattern::PatternMatchResult};
+use crate::{Pattern, normalize_path, paths::NormalizedPath, pattern::PatternMatchResult};
 
 /// Walker implementation, yielding filesystem entries that match the provided pattern
 ///
@@ -40,7 +41,7 @@ struct WalkerState {
     pattern: Pattern,
 
     /// Directory we're walking from (canonicalized)
-    walk_from: PathBuf,
+    walk_from: NormalizedPath,
 
     /// Prefix to add to all paths before pattern matching
     ///
@@ -76,17 +77,21 @@ impl Walker {
 
         // Simplify the base directory, as to have an absolute path,
         // and avoid components like `.` or `..`
-        let walk_from = simplify_path(&walk_from);
+        let walk_from = normalize_path(&walk_from).ok()?;
 
         Some(Walker {
             state: Some(WalkerState {
-                parent_prefix: diff_path(&walk_from, &base_dir),
-                going_into_dir: Some(walk_from.clone()),
+                parent_prefix: diff_path(&walk_from, &normalize_path(&base_dir).unwrap()),
+                going_into_dir: Some(walk_from.to_path_buf()),
                 pattern,
                 walk_from,
                 open_dirs: vec![],
             }),
         })
+    }
+
+    pub fn is_invalid(&self) -> bool {
+        self.state.is_none()
     }
 }
 
@@ -125,11 +130,11 @@ impl Iterator for Walker {
             };
 
             // Compute the real entry path, as the walker only provides something relative to the base *walking* directory
-            let entry_path = simplify_path(&entry.path());
+            let entry_path = normalize_path(&entry.path()).unwrap();
 
             // Compute the path relative to the base directory (if the pattern is not absolute)
             let entry_path = if state.pattern.is_absolute() {
-                entry_path
+                entry_path.to_path_buf()
             } else {
                 state
                     .parent_prefix
@@ -139,7 +144,9 @@ impl Iterator for Walker {
             // Check if the path matches the provided globbing pattern
             match state.pattern.match_against(&entry_path) {
                 // Absolute path conflict should not happen as it's been taken care of ahead of matching
-                PatternMatchResult::PathNotAbsolute | PatternMatchResult::PathIsAbsolute => {
+                PatternMatchResult::PathNotAbsolute
+                | PatternMatchResult::PathIsAbsolute
+                | PatternMatchResult::IncompatiblePrefix => {
                     unreachable!()
                 }
 
@@ -169,40 +176,15 @@ impl Iterator for Walker {
     }
 }
 
-fn simplify_path(path: &Path) -> PathBuf {
-    let mut out = match path.components().next() {
-        Some(Component::RootDir) => PathBuf::from(MAIN_SEPARATOR_STR),
-        Some(Component::Prefix(prefix)) => PathBuf::from(prefix.as_os_str()),
-        _ => PathBuf::new(),
-    };
+fn diff_path(path: &NormalizedPath, base: &NormalizedPath) -> PathBuf {
+    assert!(path.prefix().is_some());
+    assert!(base.prefix().is_some());
+    assert_eq!(path.prefix(), base.prefix());
 
-    for (i, component) in path.components().enumerate() {
-        match component {
-            Component::Prefix(_) | Component::RootDir => assert!(i == 0),
+    let mut ita = path.components().iter();
+    let mut itb = base.components().iter();
 
-            Component::CurDir => {}
-
-            Component::ParentDir => {
-                out.pop();
-            }
-
-            Component::Normal(os_str) => {
-                out.push(os_str);
-            }
-        }
-    }
-
-    out
-}
-
-fn diff_path(path: &Path, base: &Path) -> PathBuf {
-    assert!(path.is_absolute());
-    assert!(base.is_absolute());
-
-    let mut ita = path.components();
-    let mut itb = base.components();
-
-    let mut comps: Vec<Component> = vec![];
+    let mut comps = PathBuf::new();
 
     loop {
         match (ita.next(), itb.next()) {
@@ -214,19 +196,15 @@ fn diff_path(path: &Path, base: &Path) -> PathBuf {
                 break;
             }
 
-            (None, _) => comps.push(Component::ParentDir),
+            (None, _) => comps.push(OsStr::new("..")),
 
-            (Some(a), Some(b)) if comps.is_empty() && a == b => (),
-
-            (Some(a), Some(Component::CurDir)) => comps.push(a),
-
-            (Some(_), Some(Component::ParentDir)) => unreachable!(),
+            (Some(a), Some(b)) if comps.components().count() == 0 && a == b => (),
 
             (Some(a), Some(_)) => {
-                comps.push(Component::ParentDir);
+                comps.push(OsStr::new(".."));
 
                 for _ in itb {
-                    comps.push(Component::ParentDir);
+                    comps.push(OsStr::new(".."));
                 }
 
                 comps.push(a);
@@ -238,5 +216,5 @@ fn diff_path(path: &Path, base: &Path) -> PathBuf {
         }
     }
 
-    comps.iter().map(|c| c.as_os_str()).collect()
+    comps
 }
