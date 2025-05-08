@@ -81,7 +81,7 @@ impl<'a> OpaqueOsStr<'a> {
 
     /// Borrow this opaque string
     ///
-    /// This is akin to cloning, but allows changing the lifetime when required
+    /// This is akin to cloning, but doesn't require allocating and allows changing the lifetime when required
     pub fn borrow(&self) -> OpaqueOsStr {
         OpaqueOsStr {
             inner: Cow::Borrowed(self.inner.as_ref()),
