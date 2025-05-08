@@ -2,9 +2,8 @@ use std::path::Path;
 
 use globby::Pattern;
 
-#[cfg(target_family = "unix")]
 #[test]
-fn building_patterns() {
+fn building_unix_patterns() {
     for valid in [
         "", ".", "./", "/", "//", "/./.", "///", ".///", "a", "a/b", "a//b", "/a/b/", "/a//b//",
     ] {
@@ -16,9 +15,8 @@ fn building_patterns() {
     }
 }
 
-#[cfg(target_family = "unix")]
 #[test]
-fn matching_patterns() {
+fn matching_unix_patterns() {
     test_pattern(PatternTest {
         pattern_str: "*",
         should_match: &["a", "ab", "abc", "a/", "a\\"],
@@ -122,9 +120,8 @@ fn matching_patterns() {
     });
 }
 
-#[cfg(target_family = "windows")]
 #[test]
-fn building_patterns() {
+fn building_windows_patterns() {
     for valid in [
         "", ".", "./", "/", "//", "/./.", "///", ".///", "a", "a/b", "a//b", "/a/b/", "/a//b//",
         "", ".", ".\\", "\\", "\\", "\\.\\.", "\\", ".\\", "a", "a\\b", "a\\b", "\\a\\b\\",
@@ -149,47 +146,40 @@ fn building_patterns() {
     }
 }
 
-#[cfg(target_family = "windows")]
 #[test]
-fn prefixes() {
-    use globby::PatternPrefix;
+fn testing_windows_prefixes() {
+    use globby::{PathPrefix, WindowsDrive};
 
-    fn expect_prefix(pattern: &str, expected_prefix: PatternPrefix) {
+    fn expect_prefix(pattern: &str, expected_prefix: PathPrefix) {
         let pattern = compile_pattern(pattern);
 
         assert!(
             pattern
                 .prefix()
-                .is_some_and(|prefix| *prefix == expected_prefix),
+                .is_some_and(|prefix| prefix == expected_prefix),
             "Expected prefix {expected_prefix:?}, got {:?}",
             pattern.prefix()
         )
     }
 
-    for prefix in [
-        "\\\\?",
-        "\\\\?\\UNC\\server\\share",
-        "\\\\?\\C:",
-        "\\\\?\\c:",
-        "\\\\.\\device",
-        "\\\\server\\share",
-        "C:",
-        "c:",
-    ] {
-        expect_prefix(prefix, PatternPrefix::WindowsPrefix(prefix.to_owned()));
-
+    for prefix in ["\\\\?\\c:", "\\\\?\\C:", "\\\\?\\c:\\", "\\\\?\\C:\\"] {
         expect_prefix(
-            &format!("{prefix}\\"),
-            PatternPrefix::WindowsPrefix(prefix.to_owned()),
+            prefix,
+            PathPrefix::WindowsDrive(WindowsDrive::try_from('c').unwrap()),
         );
     }
 
     for prefix in [
+        "\\\\?",
+        "\\\\?\\UNC\\server\\share",
+        "\\\\.\\device",
+        "\\\\server\\share",
         "\\\\?a",
         "\\\\?\\UNC\\server",
         "\\\\?\\UNC\\server\\share*",
         "\\\\?\\C:a",
         "\\\\a",
+        "\\\\a\\",
         "C:a",
         "c:a",
     ] {
@@ -200,9 +190,8 @@ fn prefixes() {
     }
 }
 
-#[cfg(target_family = "windows")]
 #[test]
-fn matching_patterns() {
+fn matching_windows_patterns() {
     test_pattern(PatternTest {
         pattern_str: "*",
         should_match: &["a", "ab", "abc", "a\\", "a/"],
