@@ -24,7 +24,6 @@
 //! * Alternate groups (matching either one sub-pattern or another) is supported
 //! * `**` matches anything, including files an hidden directories
 //!
-//!
 //! # Syntax
 //!
 //! See [`Pattern`].

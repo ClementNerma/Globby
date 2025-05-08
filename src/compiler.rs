@@ -9,6 +9,7 @@ pub enum Component {
     Wildcard,
 }
 
+/// Determine if the build regular expressions should use case sensitivity or not
 pub enum CaseSensitivity {
     Sensitive,
     Insensitive,

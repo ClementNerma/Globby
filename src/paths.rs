@@ -5,36 +5,10 @@ use std::{
 
 use crate::opaque_os_str::OpaqueOsStr;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PathPrefix {
-    RootDir,
-    WindowsDrive(WindowsDrive),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct WindowsDrive(char);
-
-impl WindowsDrive {
-    pub fn uppercase_letter(&self) -> char {
-        self.0
-    }
-}
-
-impl TryFrom<char> for WindowsDrive {
-    type Error = InvalidWindowsDriveLetter;
-
-    fn try_from(value: char) -> Result<Self, Self::Error> {
-        if value.is_ascii_alphabetic() {
-            Ok(Self(value.to_ascii_uppercase()))
-        } else {
-            Err(InvalidWindowsDriveLetter)
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct InvalidWindowsDriveLetter;
-
+/// A normalized path
+///
+/// * The prefix is guaranteed to be supported by this crate
+/// * All `.` and empty components have been removed
 #[derive(Debug, Clone)]
 pub struct NormalizedPath {
     prefix: Option<PathPrefix>,
@@ -72,6 +46,46 @@ impl NormalizedPath {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PathPrefix {
+    RootDir,
+    WindowsDrive(WindowsDrive),
+}
+
+/// A valid Windows drive
+///
+/// Represents any of the 26 uppercase letter from 'A' to 'Z'
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct WindowsDrive(char);
+
+impl WindowsDrive {
+    // Get the drive's uppercase letter ('A' to 'Z')
+    pub fn uppercase_letter(&self) -> char {
+        self.0
+    }
+}
+
+impl TryFrom<char> for WindowsDrive {
+    type Error = InvalidWindowsDriveLetter;
+
+    fn try_from(value: char) -> Result<Self, Self::Error> {
+        if value.is_ascii_alphabetic() {
+            Ok(Self(value.to_ascii_uppercase()))
+        } else {
+            Err(InvalidWindowsDriveLetter)
+        }
+    }
+}
+
+/// A character that wasn't between 'A' and 'Z' was provided
+#[derive(Debug, Clone, Copy)]
+pub struct InvalidWindowsDriveLetter;
+
+/// Normalize a path
+///
+/// * Extracts the prefix (root directory and `C:\`, `\\?\\C:\` syntaxes)
+/// * Detects unsupported prefixes (e.g. `\\?\server\share`, `\\?\UNC\`, `\\.\device`)
+/// * Removes empty and `.` components
 pub fn normalize_path(path: &Path) -> Result<NormalizedPath, UnsupportedWindowsPrefix> {
     let path = OpaqueOsStr::new(path.as_os_str());
 
@@ -79,7 +93,7 @@ pub fn normalize_path(path: &Path) -> Result<NormalizedPath, UnsupportedWindowsP
         let path = path.strip_prefix(b"?\\").ok_or(UnsupportedWindowsPrefix)?;
 
         // Expect and extract drive letter
-        let (windows_drive, path) = extract_windows_drive(&path).ok_or(UnsupportedWindowsPrefix)?;
+        let (windows_drive, path) = strip_windows_drive(path).ok_or(UnsupportedWindowsPrefix)?;
 
         (
             Some(PathPrefix::WindowsDrive(windows_drive)),
@@ -90,7 +104,7 @@ pub fn normalize_path(path: &Path) -> Result<NormalizedPath, UnsupportedWindowsP
                 path.try_strip_prefixes([b'/', b'\\']).to_static()
             },
         )
-    } else if let Some((windows_drive, path)) = extract_windows_drive(&path) {
+    } else if let Some((windows_drive, path)) = strip_windows_drive(path.borrow()) {
         (
             Some(PathPrefix::WindowsDrive(windows_drive)),
             // Check for directory separator or end of path
@@ -121,7 +135,8 @@ pub fn normalize_path(path: &Path) -> Result<NormalizedPath, UnsupportedWindowsP
     Ok(NormalizedPath { prefix, components })
 }
 
-fn extract_windows_drive<'a>(path: &'a OpaqueOsStr) -> Option<(WindowsDrive, OpaqueOsStr<'a>)> {
+/// Match and strip the Windows drive from the provided path
+fn strip_windows_drive<'a>(path: OpaqueOsStr<'a>) -> Option<(WindowsDrive, OpaqueOsStr<'a>)> {
     let (char, path) = path.strip_ascii_char()?;
 
     let windows_drive = WindowsDrive::try_from(char).ok()?;
@@ -132,5 +147,6 @@ fn extract_windows_drive<'a>(path: &'a OpaqueOsStr) -> Option<(WindowsDrive, Opa
     Some((windows_drive, path.to_static()))
 }
 
+/// The provided path contains an invalid or unsupported Windows prefix (e.g. `\\?\server\share`, `\\?\UNC\`, `\\.\device`)
 #[derive(Debug, Clone, Copy)]
 pub struct UnsupportedWindowsPrefix;

@@ -49,9 +49,16 @@ pub struct PatternOpts {
 /// Matches are performed against path components, e.g. in `/path/to/item` components are `path`, `to` and `item`.
 /// Matchers **cannot** match path separators.
 ///
-/// * Path separators can be written as `/` or `\` depending on the platform (Windows, Linux, macOS, ...)
-/// * In addition, `**` will match any possible combination of directories. For instance, `/**/*.txt` will match any of `/file.txt`, `/dir/file.txt`, `/dir/dir2/file.txt`, and so on.
+/// In addition, note that `**` will match any possible combination of directories. For instance, `/**/*.txt` will match any of `/file.txt`, `/dir/file.txt`, `/dir/dir2/file.txt`, and so on.
+///
+/// # Platform-specific support
+///
+/// * `/` and `\` are treated as path separators independently of the platform
 /// * Absolute patterns can only be matched against absolute paths. e.g. `/dir` will not match `dir`. Note that using a [`crate::Walker`] will not cause this problem as a base directory is used.
+/// * Absolute patterns can be matched against named drives in Windows, e.g. `\dir` will match against `C:\dir` (but not the opposite)
+/// * Supported syntaxes for Windows drives are `C:\` and `\\?\C:\`
+/// * Other verbatim paths such as `\\?\server\share` or `\\.\device` are unsupported
+/// * Paths starting with `\\?\C:\` are normalized like any other path
 
 #[derive(Debug, Clone)]
 pub struct Pattern {
