@@ -202,6 +202,7 @@ fn build_common_root_dir(prefix: Option<PathPrefix>, components: &[Component]) -
         .map_while(|component| match component {
             // Only get literal components, as these will always match the exact same path components
             Component::Literal(lit) => Some(lit.as_str()),
+            Component::ParentDir => Some(".."),
             _ => None,
         })
         .collect::<Vec<_>>();
