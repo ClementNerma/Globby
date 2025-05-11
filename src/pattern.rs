@@ -245,7 +245,7 @@ fn match_components(components: &[Component], mut path: &[OsString]) -> PatternM
 
                 if path.is_empty() {
                     return if components[i + 1..].iter().any(|component| match component {
-                        Component::Regex(_) | Component::Literal(_) => true,
+                        Component::Regex(_) | Component::Literal(_) | Component::ParentDir => true,
                         Component::Wildcard => false,
                     }) {
                         PatternMatchResult::Starved
@@ -277,6 +277,18 @@ fn match_components(components: &[Component], mut path: &[OsString]) -> PatternM
                 path = &path[1..];
 
                 if part.as_encoded_bytes() != lit.as_bytes() {
+                    return PatternMatchResult::NotMatched;
+                }
+            }
+
+            Component::ParentDir => {
+                let Some(part) = path.first() else {
+                    return PatternMatchResult::NotMatched;
+                };
+
+                path = &path[1..];
+
+                if part.as_encoded_bytes() != "..".as_bytes() {
                     return PatternMatchResult::NotMatched;
                 }
             }

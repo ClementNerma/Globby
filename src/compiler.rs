@@ -7,6 +7,7 @@ pub enum Component {
     Regex(Regex),
     Literal(String),
     Wildcard,
+    ParentDir,
 }
 
 /// Determine if the built regular expressions should use case sensitivity or not
@@ -24,12 +25,13 @@ pub enum CaseSensitivity {
 pub fn compile_component(component: RawComponent, case_sensitivity: CaseSensitivity) -> Component {
     match component {
         RawComponent::Wildcard => Component::Wildcard,
+        RawComponent::ParentDir => Component::ParentDir,
 
         RawComponent::Literal(lit) => match case_sensitivity {
-            CaseSensitivity::Insensitive if lit != ".." => {
+            CaseSensitivity::Insensitive => {
                 Component::Regex(Regex::new(&format!("(?i){}", regex::escape(&lit))).unwrap())
             }
-            CaseSensitivity::Sensitive | CaseSensitivity::Insensitive => Component::Literal(lit),
+            CaseSensitivity::Sensitive => Component::Literal(lit),
         },
 
         RawComponent::Suite(chars_matchers) => {

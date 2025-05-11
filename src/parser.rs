@@ -21,7 +21,7 @@ pub static PATTERN_PARSER: LazyLock<Box<dyn Parser<RawPattern> + Send + Sync>> =
                 .repeated_into_container::<String>()
                 .at_least(1)
                 .map(CharsMatcher::Literal),
-                        //
+            //
             // Optional universal character (or not)
             //
             char('?').map(|_| CharsMatcher::AnyChar),
@@ -118,7 +118,13 @@ pub static PATTERN_PARSER: LazyLock<Box<dyn Parser<RawPattern> + Send + Sync>> =
                 .repeated_into_vec()
                 .map(|matchers| match matchers.as_slice() {
                     [] => RawComponent::Literal(String::new()),
-                    [CharsMatcher::Literal(lit)] => RawComponent::Literal(lit.to_owned()),
+                    [CharsMatcher::Literal(lit)] => {
+                        if lit == ".." {
+                            RawComponent::ParentDir
+                        } else {
+                            RawComponent::Literal(lit.to_owned())
+                        }
+                    }
                     _ => RawComponent::Suite(matchers),
                 }),
         ));
@@ -170,7 +176,7 @@ pub static PATTERN_PARSER: LazyLock<Box<dyn Parser<RawPattern> + Send + Sync>> =
                 let mut passed_parent = false;
 
                 for component in components {
-                    if !matches!(component, RawComponent::Literal(lit) if lit == "..") {
+                    if !matches!(component, RawComponent::ParentDir) {
                         passed_parent = true;
                         continue;
                     }
@@ -215,6 +221,9 @@ pub enum RawComponent {
 
     /// The component matches using a suite of matchers
     Suite(Vec<CharsMatcher>),
+
+    /// Match the parent directory
+    ParentDir,
 
     /// The component matches any suite of directories
     Wildcard,
