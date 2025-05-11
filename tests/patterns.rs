@@ -151,7 +151,7 @@ fn testing_windows_prefixes() {
     use globby::{PathPrefix, WindowsDrive};
 
     fn expect_prefix(pattern: &str, expected_prefix: PathPrefix) {
-        let pattern = compile_pattern(pattern);
+        let pattern = compile_pattern(pattern, PatternOpts::default());
 
         assert!(
             pattern
@@ -297,34 +297,82 @@ fn matching_windows_patterns() {
 
 #[test]
 fn case_sensitivity() {
-    assert!(Pattern::new("hello").unwrap().is_match(Path::new("hello")));
-    assert!(!Pattern::new("hello").unwrap().is_match(Path::new("Hello")));
+    for pattern_str in ["hEllo", "hE*?o"] {
+        let should_match = &["hEllo"];
+        let should_not_match = &["hello", "hEllO", "Hello", "hellO", "HELLO"];
 
-    assert!(
-        Pattern::new_with_opts(
-            "hello",
-            PatternOpts {
-                case_insensitive: true
-            }
-        )
-        .unwrap()
-        .is_match(Path::new("hello"))
-    );
+        test_pattern(PatternTest {
+            pattern_str,
+            should_match,
+            should_not_match,
+        });
 
-    assert!(
-        Pattern::new_with_opts(
-            "hello",
+        test_pattern_with(
+            PatternTest {
+                pattern_str,
+                should_match,
+                should_not_match,
+            },
             PatternOpts {
-                case_insensitive: true
-            }
-        )
-        .unwrap()
-        .is_match(Path::new("Hello"))
-    );
+                case_insensitive: false,
+            },
+        );
+    }
+
+    for pattern_str in ["hEllo", "hE*l?"] {
+        test_pattern_with(
+            PatternTest {
+                pattern_str,
+                should_match: &["hEllo", "hello", "Hello", "hellO", "HELLO"],
+                should_not_match: &[],
+            },
+            PatternOpts {
+                case_insensitive: true,
+            },
+        );
+    }
 }
 
-fn compile_pattern(pattern: &str) -> Pattern {
-    Pattern::new(pattern)
+#[test]
+fn parent_paths() {
+    for pattern_str in ["../hEllo", "../hE*?o"] {
+        let should_match = &["../hEllo"];
+        let should_not_match = &["../hello", "../Hello", "../hellO", "../HELLO"];
+
+        test_pattern(PatternTest {
+            pattern_str,
+            should_match,
+            should_not_match,
+        });
+
+        test_pattern_with(
+            PatternTest {
+                pattern_str,
+                should_match,
+                should_not_match,
+            },
+            PatternOpts {
+                case_insensitive: false,
+            },
+        );
+    }
+
+    for pattern_str in ["../hEllo", "../hE*l?"] {
+        test_pattern_with(
+            PatternTest {
+                pattern_str,
+                should_match: &["../hello", "../hello", "../Hello", "../hellO", "../HELLO"],
+                should_not_match: &[],
+            },
+            PatternOpts {
+                case_insensitive: true,
+            },
+        );
+    }
+}
+
+fn compile_pattern(pattern: &str, opts: PatternOpts) -> Pattern {
+    Pattern::new_with_opts(pattern, opts)
         .unwrap_or_else(|err| panic!("Failed to compile pattern '{pattern}':\n  > {err:?}"))
 }
 
@@ -335,25 +383,29 @@ struct PatternTest {
 }
 
 fn test_pattern(test: PatternTest) {
+    test_pattern_with(test, PatternOpts::default());
+}
+
+fn test_pattern_with(test: PatternTest, opts: PatternOpts) {
     let PatternTest {
         pattern_str,
         should_match,
         should_not_match,
     } = test;
 
-    let pattern = compile_pattern(pattern_str);
+    let pattern = compile_pattern(pattern_str, opts);
 
     for path in should_match {
         assert!(
             pattern.is_match(Path::new(path)),
-            "Pattern '{pattern_str}' did not match path '{path}'"
+            "Pattern '{pattern_str}' did not match path '{path}' (opts: {opts:?})"
         );
     }
 
     for path in should_not_match {
         assert!(
             !pattern.is_match(Path::new(path)),
-            "Pattern '{pattern_str}' unexpectedly matched path '{path}'"
+            "Pattern '{pattern_str}' unexpectedly matched path '{path}' (opts: {opts:?})"
         );
     }
 }

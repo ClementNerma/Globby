@@ -26,10 +26,10 @@ pub fn compile_component(component: RawComponent, case_sensitivity: CaseSensitiv
         RawComponent::Wildcard => Component::Wildcard,
 
         RawComponent::Literal(lit) => match case_sensitivity {
-            CaseSensitivity::Sensitive => Component::Literal(lit),
-            CaseSensitivity::Insensitive => {
+            CaseSensitivity::Insensitive if lit != ".." => {
                 Component::Regex(Regex::new(&format!("(?i){}", regex::escape(&lit))).unwrap())
             }
+            CaseSensitivity::Sensitive | CaseSensitivity::Insensitive => Component::Literal(lit),
         },
 
         RawComponent::Suite(chars_matchers) => {
