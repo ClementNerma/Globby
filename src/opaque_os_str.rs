@@ -82,7 +82,7 @@ impl<'a> OpaqueOsStr<'a> {
     /// Borrow this opaque string
     ///
     /// This is akin to cloning, but doesn't require allocating and allows changing the lifetime when required
-    pub fn borrow(&self) -> OpaqueOsStr {
+    pub fn borrow(&'_ self) -> OpaqueOsStr<'_> {
         OpaqueOsStr {
             inner: Cow::Borrowed(self.inner.as_ref()),
         }
@@ -141,7 +141,10 @@ impl<'a> OpaqueOsStr<'a> {
     }
 
     /// Split the string using the given predicate
-    pub fn split(&self, predicate: impl Fn(u8) -> bool) -> impl Iterator<Item = OpaqueOsStr> {
+    pub fn split(
+        &'_ self,
+        predicate: impl Fn(u8) -> bool,
+    ) -> impl Iterator<Item = OpaqueOsStr<'_>> {
         self.inner
             .split(move |b| predicate(*b as u8))
             .map(|opaques| OpaqueOsStr {
