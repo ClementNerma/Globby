@@ -29,7 +29,7 @@ pub fn compile_component(component: RawComponent, case_sensitivity: CaseSensitiv
 
         RawComponent::Literal(lit) => match case_sensitivity {
             CaseSensitivity::Insensitive => {
-                Component::Regex(Regex::new(&format!("(?i){}", regex::escape(&lit))).unwrap())
+                Component::Regex(Regex::new(&format!("(?i)^{}$", regex::escape(&lit))).unwrap())
             }
             CaseSensitivity::Sensitive => Component::Literal(lit),
         },
